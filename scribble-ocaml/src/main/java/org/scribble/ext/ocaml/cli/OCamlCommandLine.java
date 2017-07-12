@@ -19,7 +19,8 @@ import java.util.Map;
 import org.scribble.cli.CLArgFlag;
 import org.scribble.cli.CommandLine;
 import org.scribble.cli.CommandLineException;
-import org.scribble.ext.ocaml.codegen.OCamlTypeBuilder;
+import org.scribble.ext.ocaml.codegen.OCamlAPIBuilder;
+import org.scribble.ext.ocaml.codegen.Util;
 import org.scribble.main.Job;
 import org.scribble.main.JobContext;
 import org.scribble.main.ScribbleException;
@@ -28,7 +29,7 @@ import org.scribble.sesstype.name.Role;
 
 public class OCamlCommandLine extends CommandLine
 {
-	protected final Map<OCamlCLArgFlag, String[]> goArgs;  // Maps each flag to list of associated argument values
+	protected final Map<OCamlCLArgFlag, String[]> ocamlArgs;  // Maps each flag to list of associated argument values
 	
 	public OCamlCommandLine(String... args) throws CommandLineException
 	{
@@ -38,7 +39,7 @@ public class OCamlCommandLine extends CommandLine
 		// FIXME: refactor
 		OCamlCLArgParser p = new OCamlCLArgParser(args);
 		this.args = p.getArgs();
-		this.goArgs = p.getGoArgs();
+		this.ocamlArgs = p.getOCamlArgs();
 		// Duplicated from super
 		if (!this.args.containsKey(CLArgFlag.MAIN_MOD) && !this.args.containsKey(CLArgFlag.INLINE_MAIN_MOD))
 		{
@@ -49,17 +50,18 @@ public class OCamlCommandLine extends CommandLine
 	@Override
 	protected void doNonAttemptableOutputTasks(Job job) throws ScribbleException, CommandLineException
 	{		
-		if (this.goArgs.containsKey(OCamlCLArgFlag.OCAML_API_GEN))
+		if (this.ocamlArgs.containsKey(OCamlCLArgFlag.OCAML_API_GEN))
 		{
 			JobContext jcontext = job.getContext();
-			String[] args = this.goArgs.get(OCamlCLArgFlag.OCAML_API_GEN);
+			String[] args = this.ocamlArgs.get(OCamlCLArgFlag.OCAML_API_GEN);
 			for (int i = 0; i < args.length; i += 2)
 			{
 				GProtocolName fullname = checkGlobalProtocolArg(jcontext, args[i]);
-				Role role = checkRoleArg(jcontext, fullname, args[i+1]);
-				OCamlTypeBuilder apigen = new OCamlTypeBuilder(job, fullname, role, job.getContext().getEGraph(fullname, role));
-				Map<String, String> map = new HashMap<>(); 
-				map.put("type.ml", apigen.build());
+				Role mainrole = checkRoleArg(jcontext, fullname, args[i+1]);
+				String program = new OCamlAPIBuilder(job, fullname, mainrole).generateAPI();
+				
+				Map<String, String> map = new HashMap<>(); 				
+				map.put(Util.uncapitalise(fullname.getSimpleName().toString()) + ".ml", program);
 				outputClasses(map);
 			}
 		}

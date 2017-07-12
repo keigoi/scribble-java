@@ -34,33 +34,38 @@ public class OCamlTypeBuilder {
 	}
 
 	public String build() {
-		return build(this.graph.init);
+		return buildTypes(this.graph.init);
 	}
 	
-	protected String build(EState start) {
-		ArrayList<EState> toplevels = new ArrayList<>(), visited = new ArrayList<>();
-		toplevels.add(start);
-		toplevel(start, toplevels, visited);
-		
+	protected String buildTypes(EState start) {
 		StringBuffer buf = new StringBuffer();
-		buf.append("type " + uncapitalise(gpn.getSimpleName().toString()) + " = " + getStateChanName(start) + "\n");
+		// local types
+		List<EState> toplevels = getRecurringStates(start);		
+		buf.append("type " + Util.uncapitalise(gpn.getSimpleName().toString()) + "_" + this.role + " = " + getStateChanName(start) + "\n");
 		for(EState me : toplevels) {
 			buf.append("and " + getStateChanName(me) + " = \n");
-			build_rec(me, buf, toplevels, 1, true);
+			buildTypes(me, buf, toplevels, 0);
 			buf.append("\n");
 		}
 		return buf.toString();
 	}
 	
-	// traverse the graph to gather recurring types which will be declared at the top level
-	protected void toplevel(EState curr, List<EState> toplevels, List<EState> visited) {
+	// traverse the graph to gather recurring states which will be declared at the top level
+	public static List<EState> getRecurringStates(EState start) {
+		ArrayList<EState> recurring = new ArrayList<>(), visited = new ArrayList<>();
+		recurring.add(start);
+		getRecurringStates(start, recurring, visited);
+		return recurring;
+	}
+	
+	protected static void getRecurringStates(EState curr, List<EState> recurring, List<EState> visited) {
 		// if visited twice, add that state to the toplevels
 		if(visited.contains(curr)) {
-			if( !toplevels.contains(curr) ) toplevels.add(curr);
+			if( !recurring.contains(curr) ) recurring.add(curr);
 		} else {
 			visited.add(curr);
 			for(EAction action : curr.getActions()) {
-				toplevel(curr.getSuccessor(action), toplevels, visited);				
+				getRecurringStates(curr.getSuccessor(action), recurring, visited);				
 			}
 		}
 	}
@@ -71,8 +76,9 @@ public class OCamlTypeBuilder {
 		return actions.get(0);
 	}
 
+	// indent == -1 is the rightmost 
 	protected static void indent(StringBuffer buf, int level) {
-		for (int i = 0; i < level * 2; i++) {
+		for (int i = 0; i < (level + 1) * 2; i++) {
 			buf.append(' ');
 		}
 	}
@@ -81,7 +87,10 @@ public class OCamlTypeBuilder {
 		if(payloads.isEmpty()) {
 			return "unit";
 		} else {
-			return payloads.stream().map(PayloadType::toString).map(OCamlTypeBuilder::uncapitalise).collect(Collectors.joining(","));
+			return payloads.stream()
+					.map(PayloadType::toString)
+					.map(Util::uncapitalise) // ad hoc renaming -- String -> string for example
+					.collect(Collectors.joining(","));
 		}
 	}
 
@@ -115,11 +124,11 @@ public class OCamlTypeBuilder {
 		}
 	}
 
-	protected void build_rec(EState curr, StringBuffer buf, List<EState> toplevel, int level, boolean init) {
+	protected void buildTypes(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
 
 		indent(buf, level);
 
-		if (!init && toplevel.contains(curr)) {
+		if (level != 0 && toplevel.contains(curr)) {
 			buf.append(getStateChanName(curr));
 			return;
 		}
@@ -145,10 +154,10 @@ public class OCamlTypeBuilder {
 
 				checkPayloadIsDelegation(payloads);
 
-				buf.append("`" + action.mid + " of [`" + action.peer + "] * " + payloadTypesToString(payloads) + " *\n");
+				buf.append("`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
 
 				EState succ = curr.getSuccessor(action);
-				build_rec(succ, buf, toplevel, level + 1, false);
+				buildTypes(succ, buf, toplevel, level + 1);
 
 				mid = true;
 			}
@@ -160,13 +169,13 @@ public class OCamlTypeBuilder {
 			EAction action = getSingleAction(curr);
 			List<PayloadType<?>> payloads = action.payload.elems;
 			if (checkPayloadIsDelegation(payloads)) {
-				buf.append("[`deleg_recv of [`" + action.mid + " of " + action.peer + " * ");
+				buf.append("[`deleg_recv of [`" + action.mid + " of [`" + action.peer + "] role * ");
 				buf.append(payloads.get(0).toString() + "\n");
 			} else {
-				buf.append("[`recv of [`" + action.mid + " of [`" + action.peer + "] * " + payloadTypesToString(payloads) + " *\n");
+				buf.append("[`recv of [`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
 			}
 			EState succ = curr.getSuccessor(action);
-			build_rec(succ, buf, toplevel, level + 1, false);
+			buildTypes(succ, buf, toplevel, level + 1);
 			buf.append("]]");
 			break;
 		}
@@ -188,9 +197,9 @@ public class OCamlTypeBuilder {
 					buf.append("|");
 				}
 				mid = true;
-				buf.append("`" + action.mid + " of [`" + action.peer + "] * " + payloadTypesToString(payloads) + " *\n");
+				buf.append("`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
 				EState succ = curr.getSuccessor(action);
-				build_rec(succ, buf, toplevel, level + 1, false);
+				buildTypes(succ, buf, toplevel, level + 1);
 			}
 			buf.append("]]");
 			level--;
@@ -227,11 +236,7 @@ public class OCamlTypeBuilder {
 		String name = this.gpn.getSimpleName() + "_" + role + "_" + this.counter++;
 		// return (s.id == this.graph.init.id) ? name : "_" + name; // For
 		// "protected" non-initial state channels
-		return uncapitalise(name);
-	}
-	
-	protected static String uncapitalise(String name) {
-		return Character.toLowerCase(name.charAt(0)) + name.substring(1);
+		return Util.uncapitalise(name);
 	}
 
 }
