@@ -85,6 +85,7 @@
 		<module>scribble-dist</module>
 		<module>scribble-demos</module>
 		<module>scribble-ocaml</module>
+		<module>scribble-f17</module>
 	</modules>
 
 	<dependencyManagement>
@@ -117,6 +118,11 @@
 			<dependency>
 				<groupId>org.scribble</groupId>
 				<artifactId>scribble-ocaml</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.scribble</groupId>
+				<artifactId>scribble-f17</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 			<dependency>

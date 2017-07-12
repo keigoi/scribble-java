@@ -31,14 +31,9 @@ public class OCamlCommandLine extends CommandLine
 {
 	protected final Map<OCamlCLArgFlag, String[]> ocamlArgs;  // Maps each flag to list of associated argument values
 	
-	public OCamlCommandLine(String... args) throws CommandLineException
+	public OCamlCommandLine(OCamlCLArgParser p) throws CommandLineException
 	{
-		/*super(args);  // No: go-args will make core arg parser throw exception -- refactor?
-		this.goArgs = new GoCLArgParser(args).getGoArgs();*/
-
-		// FIXME: refactor
-		OCamlCLArgParser p = new OCamlCLArgParser(args);
-		this.args = p.getArgs();
+		super(p);
 		this.ocamlArgs = p.getOCamlArgs();
 		// Duplicated from super
 		if (!this.args.containsKey(CLArgFlag.MAIN_MOD) && !this.args.containsKey(CLArgFlag.INLINE_MAIN_MOD))
@@ -73,6 +68,6 @@ public class OCamlCommandLine extends CommandLine
 
 	public static void main(String[] args) throws CommandLineException, ScribbleException
 	{
-		new OCamlCommandLine(args).run();
+		new OCamlCommandLine(new OCamlCLArgParser(args)).run();
 	}
 }
