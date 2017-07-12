@@ -42,7 +42,7 @@ public class OCamlCLArgParser extends CLArgParser
 		super(args);  // Assigns this.args and calls parseArgs
 	}		
 	
-	public Map<OCamlCLArgFlag, String[]> getGoArgs()
+	public Map<OCamlCLArgFlag, String[]> getOCamlArgs()
 	{
 		return this.ocamlParsed;
 	}
