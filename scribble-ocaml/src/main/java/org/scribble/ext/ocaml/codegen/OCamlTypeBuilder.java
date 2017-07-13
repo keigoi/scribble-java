@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.scribble.main.Job;
@@ -94,6 +95,22 @@ public class OCamlTypeBuilder {
 		}
 	}
 
+	protected static boolean checkAllActions(List<EAction> actions, Predicate<EAction> pred) {
+		Boolean found = null;
+		for(EAction action : actions) {
+			boolean test = pred.test(action);
+			if(found != null && found.booleanValue() != test) {
+				throw new RuntimeException("[OCaml] non-uniform EAction found");
+			}
+			if(test) {
+				found = true;
+			} else {
+				found = false;
+			}
+		}
+		return found;
+	}
+
 	protected static boolean checkPayloadIsDelegation(List<PayloadType<?>> payloads) {
 		if (payloads.size() == 0) {
 			return false;
@@ -134,30 +151,21 @@ public class OCamlTypeBuilder {
 		}
 
 		switch (curr.getStateKind()) {
-		case OUTPUT: {
-			if(curr.getActions().get(0).isConnect()) {
-				connect(curr, buf, toplevel, level);
-			} else {
-				output(curr, buf, toplevel, level);
-			}
+		case OUTPUT:
+			output(curr, buf, toplevel, level);
 			break;
-		}
-		case UNARY_INPUT: {
+		case UNARY_INPUT:
 			unaryInput(curr, buf, toplevel, level);
 			break;
-		}
-		case POLY_INPUT: {
-			polyInput(curr, buf, toplevel, level);
+		case POLY_INPUT:
+			polyInput(curr, buf, toplevel, level, false);
 			break;
-		}
-		case TERMINAL: {
+		case TERMINAL:
 			buf.append("[`close]");
 			break;
-		}
-		case ACCEPT: {
-			accept(curr, buf, toplevel, level);
+		case ACCEPT:
+			polyInput(curr, buf, toplevel, level, true);
 			break;
-		}
 		case WRAP_SERVER:
 			throw new RuntimeException("TODO");
 		default:
@@ -165,33 +173,26 @@ public class OCamlTypeBuilder {
 		}
 	}
 
-	protected void connect(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
-		EAction action = getSingleAction(curr);
-		List<PayloadType<?>> payloads = action.payload.elems;
-		if(checkPayloadIsDelegation(payloads)) {
-			throw new RuntimeException("[OCaml] connection payload can't contain delegation");
-		}
-		
-		if (! action.mid.toString().equals("")) {
-			System.err.println("[OCaml] label in connect is omitted: " + action.mid);
-		}
-		
-		buf.append("[`connect of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
-
-		EState succ = curr.getSuccessor(action);
-		buildTypes(succ, buf, toplevel, level + 1);
-		buf.append("]");
-		level--;
-	}
-
 	protected void output(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
 		// output can contain both datatype and non-datatype payload
 
-		boolean middle = false;
-		buf.append("[`send of \n");
+		boolean isConnect = checkAllActions(curr.getActions(), (EAction a) -> a.isConnect());
+		boolean isDisConnect = checkAllActions(curr.getActions(), (EAction a) -> a.isDisconnect());
+		String prefix;
+		if(isConnect) {
+			prefix = "[`connect of\n";
+		} else if(isDisConnect) {
+			prefix = "[`disconnect of\n";			
+		} else {
+			prefix = "[`send of\n";
+		}
+		buf.append(prefix);
+		
 		level++;
 		indent(buf, level);
 		buf.append("[");
+		
+		boolean middle = false;
 
 		for (EAction action : curr.getActions()) {
 			List<PayloadType<?>> payloads = action.payload.elems;
@@ -204,7 +205,7 @@ public class OCamlTypeBuilder {
 
 			checkPayloadIsDelegation(payloads);
 
-			buf.append("`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
+			buf.append("`" + Util.label(action.mid) + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
 
 			EState succ = curr.getSuccessor(action);
 			buildTypes(succ, buf, toplevel, level + 1);
@@ -218,17 +219,25 @@ public class OCamlTypeBuilder {
 		EAction action = getSingleAction(curr);
 		List<PayloadType<?>> payloads = action.payload.elems;
 		if (checkPayloadIsDelegation(payloads)) {
-			buf.append("[`deleg_recv of [`" + action.mid + " of [`" + action.peer + "] role * ");
+			buf.append("[`deleg_recv of [`" + Util.label(action.mid) + " of [`" + action.peer + "] role * ");
 			buf.append(payloads.get(0).toString() + "\n");
 		} else {
-			buf.append("[`recv of [`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
+			buf.append("[`recv of [`" + Util.label(action.mid) + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
 		}
 		EState succ = curr.getSuccessor(action);
 		buildTypes(succ, buf, toplevel, level + 1);
 		buf.append("]]");
 	}
-	protected void polyInput(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
-		buf.append("[`recv of\n");
+	
+	protected void polyInput(EState curr, StringBuffer buf, List<EState> toplevel, int level, boolean accept) {
+		String prefix;
+		if(accept) {
+			prefix = "[`accept of\n";
+		} else {
+			prefix = "[`recv of\n";
+		}
+		buf.append(prefix);
+		
 		level++;
 		indent(buf, level);
 		buf.append("[");
@@ -245,28 +254,12 @@ public class OCamlTypeBuilder {
 				buf.append("|");
 			}
 			mid = true;
-			buf.append("`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
+			buf.append("`" + Util.label(action.mid) + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
 			EState succ = curr.getSuccessor(action);
 			buildTypes(succ, buf, toplevel, level + 1);
 		}
 		buf.append("]]");
 		level--;
-	}
-
-	protected void accept(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
-		EAction action = getSingleAction(curr);
-		List<PayloadType<?>> payloads = action.payload.elems;
-		if (checkPayloadIsDelegation(payloads)) {
-			throw new RuntimeException("[OCaml] accept payload cannot contain delegation");
-		} else {			
-			buf.append("[`accept of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
-			if (! action.mid.toString().equals("")) {
-				System.err.println("[OCaml] label in accept is omitted: " + action.mid);
-			}
-		}
-		EState succ = curr.getSuccessor(action);
-		buildTypes(succ, buf, toplevel, level + 1);
-		buf.append("]");
 	}
 
 	// XXX copied from STStateChanAPIBuilder
@@ -278,7 +271,7 @@ public class OCamlTypeBuilder {
 		}
 		return name;
 	}
-
+	
 	protected String makeSTStateName(EState s) {
 		String name = this.gpn.getSimpleName() + "_" + role + "_" + this.counter++;
 		return Util.uncapitalise(name);
