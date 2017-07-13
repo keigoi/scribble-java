@@ -124,7 +124,7 @@ public class OCamlAPIBuilder {
 		StringBuffer buf = new StringBuffer();
 		
 		for(String label : labels) {
-			String code = format.replace("%LABEL", label);
+			String code = format.replace("%LABEL", Util.label(label));
 			buf.append(code);
 			buf.append("\n");
 		}
