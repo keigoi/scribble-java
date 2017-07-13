@@ -48,7 +48,7 @@ public class F17CommandLine extends CommandLine
 		this(new F17CLArgParser(args));
 	}
 
-	private F17CommandLine(F17CLArgParser p) throws CommandLineException
+	public F17CommandLine(F17CLArgParser p) throws CommandLineException
 	{
 		super(p);  // calls p.parse()
 		if (this.args.containsKey(CLArgFlag.INLINE_MAIN_MOD))
