@@ -17,10 +17,10 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.scribble.cli.CLArgParser;
 import org.scribble.cli.CommandLineException;
+import org.scribble.ext.f17.cli.F17CLArgParser;
 
-public class OCamlCLArgParser extends CLArgParser
+public class OCamlCLArgParser extends F17CLArgParser
 {
 	// Non-unique flags
 	public static final String OCAML_API_GEN_FLAG = "-ocamlapi";
