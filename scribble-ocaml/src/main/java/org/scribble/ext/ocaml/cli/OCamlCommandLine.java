@@ -17,8 +17,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.scribble.cli.CLArgFlag;
-import org.scribble.cli.CommandLine;
 import org.scribble.cli.CommandLineException;
+import org.scribble.ext.f17.cli.F17CommandLine;
 import org.scribble.ext.ocaml.codegen.OCamlAPIBuilder;
 import org.scribble.ext.ocaml.codegen.Util;
 import org.scribble.main.Job;
@@ -27,7 +27,7 @@ import org.scribble.main.ScribbleException;
 import org.scribble.sesstype.name.GProtocolName;
 import org.scribble.sesstype.name.Role;
 
-public class OCamlCommandLine extends CommandLine
+public class OCamlCommandLine extends F17CommandLine
 {
 	protected final Map<OCamlCLArgFlag, String[]> ocamlArgs;  // Maps each flag to list of associated argument values
 	
@@ -64,6 +64,12 @@ public class OCamlCommandLine extends CommandLine
 		{
 			super.doNonAttemptableOutputTasks(job);
 		}
+	}
+	
+	protected static void tweakF17(String[] args) {
+		
+		
+		
 	}
 
 	public static void main(String[] args) throws CommandLineException, ScribbleException

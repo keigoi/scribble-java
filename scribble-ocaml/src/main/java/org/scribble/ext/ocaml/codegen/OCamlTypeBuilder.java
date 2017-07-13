@@ -60,7 +60,7 @@ public class OCamlTypeBuilder {
 	
 	protected static void getRecurringStates(EState curr, List<EState> recurring, List<EState> visited) {
 		// if visited twice, add that state to the toplevels
-		if(visited.contains(curr)) {
+		if(visited.contains(curr) && !curr.isTerminal()) {
 			if( !recurring.contains(curr) ) recurring.add(curr);
 		} else {
 			visited.add(curr);
@@ -69,7 +69,7 @@ public class OCamlTypeBuilder {
 			}
 		}
 	}
-
+	
 	protected static EAction getSingleAction(EState s) {
 		List<EAction> actions = s.getActions();
 		assert (actions.size() == 1);
@@ -135,87 +135,138 @@ public class OCamlTypeBuilder {
 
 		switch (curr.getStateKind()) {
 		case OUTPUT: {
-			// output can contain both datatype and non-datatype payload
-
-			boolean mid = false;
-			buf.append("[`send of \n");
-			level++;
-			indent(buf, level);
-			buf.append("[");
-
-			for (EAction action : curr.getActions()) {
-				List<PayloadType<?>> payloads = action.payload.elems;
-
-				if (mid) {
-					buf.append("\n");
-					indent(buf, level);
-					buf.append("|");
-				}
-
-				checkPayloadIsDelegation(payloads);
-
-				buf.append("`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
-
-				EState succ = curr.getSuccessor(action);
-				buildTypes(succ, buf, toplevel, level + 1);
-
-				mid = true;
+			if(curr.getActions().get(0).isConnect()) {
+				connect(curr, buf, toplevel, level);
+			} else {
+				output(curr, buf, toplevel, level);
 			}
-			buf.append("]]");
-			level--;
 			break;
 		}
 		case UNARY_INPUT: {
-			EAction action = getSingleAction(curr);
-			List<PayloadType<?>> payloads = action.payload.elems;
-			if (checkPayloadIsDelegation(payloads)) {
-				buf.append("[`deleg_recv of [`" + action.mid + " of [`" + action.peer + "] role * ");
-				buf.append(payloads.get(0).toString() + "\n");
-			} else {
-				buf.append("[`recv of [`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
-			}
-			EState succ = curr.getSuccessor(action);
-			buildTypes(succ, buf, toplevel, level + 1);
-			buf.append("]]");
+			unaryInput(curr, buf, toplevel, level);
 			break;
 		}
 		case POLY_INPUT: {
-			buf.append("[`recv of\n");
-			level++;
-			indent(buf, level);
-			buf.append("[");
-			
-			boolean mid = false;
-			for (EAction action : curr.getActions()) {
-				List<PayloadType<?>> payloads = action.payload.elems;
-				if (checkPayloadIsDelegation(payloads)) {
-					throw new RuntimeException("[OCaml] payload cannot contain delegation in multiple input branch");
-				}
-				if(mid) {
-					buf.append("\n");
-					indent(buf, level);
-					buf.append("|");
-				}
-				mid = true;
-				buf.append("`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
-				EState succ = curr.getSuccessor(action);
-				buildTypes(succ, buf, toplevel, level + 1);
-			}
-			buf.append("]]");
-			level--;
+			polyInput(curr, buf, toplevel, level);
 			break;
 		}
 		case TERMINAL: {
 			buf.append("[`close]");
 			break;
 		}
-		case ACCEPT:
-			throw new RuntimeException("TODO");
+		case ACCEPT: {
+			accept(curr, buf, toplevel, level);
+			break;
+		}
 		case WRAP_SERVER:
 			throw new RuntimeException("TODO");
 		default:
 			throw new RuntimeException("Shouldn't get in here: " + curr);
 		}
+	}
+
+	protected void connect(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
+		EAction action = getSingleAction(curr);
+		List<PayloadType<?>> payloads = action.payload.elems;
+		if(checkPayloadIsDelegation(payloads)) {
+			throw new RuntimeException("[OCaml] connection payload can't contain delegation");
+		}
+		
+		if (! action.mid.toString().equals("")) {
+			System.err.println("[OCaml] label in connect is omitted: " + action.mid);
+		}
+		
+		buf.append("[`connect of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
+
+		EState succ = curr.getSuccessor(action);
+		buildTypes(succ, buf, toplevel, level + 1);
+		buf.append("]");
+		level--;
+	}
+
+	protected void output(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
+		// output can contain both datatype and non-datatype payload
+
+		boolean middle = false;
+		buf.append("[`send of \n");
+		level++;
+		indent(buf, level);
+		buf.append("[");
+
+		for (EAction action : curr.getActions()) {
+			List<PayloadType<?>> payloads = action.payload.elems;
+
+			if (middle) {
+				buf.append("\n");
+				indent(buf, level);
+				buf.append("|");
+			}
+
+			checkPayloadIsDelegation(payloads);
+
+			buf.append("`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
+
+			EState succ = curr.getSuccessor(action);
+			buildTypes(succ, buf, toplevel, level + 1);
+
+			middle = true;
+		}
+		buf.append("]]");
+		level--;
+	}
+	protected void unaryInput(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
+		EAction action = getSingleAction(curr);
+		List<PayloadType<?>> payloads = action.payload.elems;
+		if (checkPayloadIsDelegation(payloads)) {
+			buf.append("[`deleg_recv of [`" + action.mid + " of [`" + action.peer + "] role * ");
+			buf.append(payloads.get(0).toString() + "\n");
+		} else {
+			buf.append("[`recv of [`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
+		}
+		EState succ = curr.getSuccessor(action);
+		buildTypes(succ, buf, toplevel, level + 1);
+		buf.append("]]");
+	}
+	protected void polyInput(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
+		buf.append("[`recv of\n");
+		level++;
+		indent(buf, level);
+		buf.append("[");
+		
+		boolean mid = false;
+		for (EAction action : curr.getActions()) {
+			List<PayloadType<?>> payloads = action.payload.elems;
+			if (checkPayloadIsDelegation(payloads)) {
+				throw new RuntimeException("[OCaml] payload cannot contain delegation in multiple input branch");
+			}
+			if(mid) {
+				buf.append("\n");
+				indent(buf, level);
+				buf.append("|");
+			}
+			mid = true;
+			buf.append("`" + action.mid + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
+			EState succ = curr.getSuccessor(action);
+			buildTypes(succ, buf, toplevel, level + 1);
+		}
+		buf.append("]]");
+		level--;
+	}
+
+	protected void accept(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
+		EAction action = getSingleAction(curr);
+		List<PayloadType<?>> payloads = action.payload.elems;
+		if (checkPayloadIsDelegation(payloads)) {
+			throw new RuntimeException("[OCaml] accept payload cannot contain delegation");
+		} else {			
+			buf.append("[`accept of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
+			if (! action.mid.toString().equals("")) {
+				System.err.println("[OCaml] label in accept is omitted: " + action.mid);
+			}
+		}
+		EState succ = curr.getSuccessor(action);
+		buildTypes(succ, buf, toplevel, level + 1);
+		buf.append("]");
 	}
 
 	// XXX copied from STStateChanAPIBuilder
@@ -228,14 +279,8 @@ public class OCamlTypeBuilder {
 		return name;
 	}
 
-	// XXX copied from GSTStateChanAPIBuilder
 	protected String makeSTStateName(EState s) {
-		if (s.isTerminal()) {
-			return "_EndState";
-		}
 		String name = this.gpn.getSimpleName() + "_" + role + "_" + this.counter++;
-		// return (s.id == this.graph.init.id) ? name : "_" + name; // For
-		// "protected" non-initial state channels
 		return Util.uncapitalise(name);
 	}
 

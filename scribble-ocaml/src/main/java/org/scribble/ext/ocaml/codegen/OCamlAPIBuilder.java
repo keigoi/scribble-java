@@ -144,7 +144,11 @@ public class OCamlAPIBuilder {
 		
 		visited.add(state);
 		
-		Set<String> labels = state.getActions().stream().map((EAction a) -> a.mid.toString()).collect(Collectors.toSet());
+		Set<String> labels = 
+				state.getActions().stream()
+				.map((EAction a) -> a.mid.toString())
+				.filter((String s) -> !"".equals(s))
+				.collect(Collectors.toSet());
 		
 		for(EState succ : state.getSuccessors()) {
 			labels.addAll(labels(succ, visited));
