@@ -88,7 +88,7 @@ public class OCamlTypeBuilder {
 		if(payloads.isEmpty()) {
 			return "unit";
 		} else if (payloads.size()==1) {
-			return payloads.get(0).toString();
+			return Util.uncapitalise(payloads.get(0).toString());
 		} else {
 			return "(" + payloads.stream()
 					.map(PayloadType::toString)
@@ -178,12 +178,9 @@ public class OCamlTypeBuilder {
 	protected void output(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
 		// output can contain both datatype and non-datatype payload
 
-		boolean isConnect = checkAllActions(curr.getActions(), (EAction a) -> a.isConnect());
 		boolean isDisConnect = checkAllActions(curr.getActions(), (EAction a) -> a.isDisconnect());
 		String prefix;
-		if(isConnect) {
-			prefix = "[`connect of\n";
-		} else if(isDisConnect) {
+		if(isDisConnect) {
 			prefix = "[`disconnect of\n";			
 		} else {
 			prefix = "[`send of\n";
@@ -197,17 +194,19 @@ public class OCamlTypeBuilder {
 		boolean middle = false;
 
 		for (EAction action : curr.getActions()) {
-			List<PayloadType<?>> payloads = action.payload.elems;
 
 			if (middle) {
 				buf.append("\n");
 				indent(buf, level);
 				buf.append("|");
 			}
+			
+			String roleSuffix = action.isConnect() ? " connect" : "";
 
+			List<PayloadType<?>> payloads = action.payload.elems;
 			checkPayloadIsDelegation(payloads);
 
-			buf.append("`" + Util.label(action.mid) + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
+			buf.append("`" + Util.label(action.mid) + " of [`" + action.peer + "] role" + roleSuffix + " * " + payloadTypesToString(payloads) + " *\n");
 
 			EState succ = curr.getSuccessor(action);
 			buildTypes(succ, buf, toplevel, level + 1);
