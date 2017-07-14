@@ -56,7 +56,7 @@ public class OCamlAPIBuilder {
           + "  Internal.__initiate ~myname:\"%PROTOCOL_%ROLE\" ch";
 	
 	public static final String newChannelStandardFormat = 
-			"let new_channel_%PROTOCOL : unit -> (%PROTOCOL,[`ConnectLater]) channel = new_channel";
+			"let new_channel_%PROTOCOL : unit -> (%PROTOCOL,[`ConnectFirst]) channel = new_channel";
 	
 	public static final String newChannelExplicitConnectionFormat = 
 			"let new_channel_%PROTOCOL () : (%PROTOCOL,[`ConnectLater]) channel = Internal.__new_connect_later_channel [%ROLES]";
