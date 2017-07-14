@@ -1,5 +1,12 @@
 package org.scribble.ext.ocaml.codegen;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.BiFunction;
+
+import org.scribble.model.MAction;
+import org.scribble.model.MState;
+import org.scribble.sesstype.kind.ProtocolKind;
 import org.scribble.sesstype.name.MessageId;
 
 public class Util {
@@ -21,5 +28,31 @@ public class Util {
 			return msg;
 		}
 	}
-
+	
+	public static 
+		<T,
+		L,
+		A extends MAction<K>,
+		S extends MState<L, A, S, K>,
+		K extends ProtocolKind> T traverse(S state, T init, BiFunction<T, S, T> fun) {
+		return traverse(state, init, fun, new ArrayList<>());
+	}
+	
+	private static <T,
+	L,
+	A extends MAction<K>,
+	S extends MState<L, A, S, K>,
+	K extends ProtocolKind> T traverse(S state, T init, BiFunction<T, S, T> fun, List<S> visited) {
+		if(visited.contains(state)) {
+			return init;
+		}
+		
+		visited.add(state);
+		
+		T accum = init;
+		for(S succ : state.getSuccessors()) {
+			accum = fun.apply(accum, succ);
+		}
+		return accum;
+	}
 }
