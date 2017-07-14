@@ -87,11 +87,13 @@ public class OCamlTypeBuilder {
 	protected static String payloadTypesToString(List<PayloadType<?>> payloads) {
 		if(payloads.isEmpty()) {
 			return "unit";
+		} else if (payloads.size()==1) {
+			return payloads.get(0).toString();
 		} else {
-			return payloads.stream()
+			return "(" + payloads.stream()
 					.map(PayloadType::toString)
 					.map(Util::uncapitalise) // ad hoc renaming -- String -> string for example
-					.collect(Collectors.joining(","));
+					.collect(Collectors.joining(" * ")) + ")";
 		}
 	}
 
