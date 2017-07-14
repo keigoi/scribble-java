@@ -24,7 +24,7 @@ public class OCamlAPIBuilder {
 	public final GProtocolName fullname;
 	public final ProtocolDecl<?> protocol;
 
-	public OCamlAPIBuilder(Job job, GProtocolName fullname, Role mainrole) {
+	public OCamlAPIBuilder(Job job, GProtocolName fullname) {
 		this.job = job;
 		this.fullname = fullname;
 		this.protocol = this.job.getContext().getMainModule().getProtocolDecl(fullname.getSimpleName());
