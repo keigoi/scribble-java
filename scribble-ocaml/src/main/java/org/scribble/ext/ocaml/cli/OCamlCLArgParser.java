@@ -76,13 +76,12 @@ public class OCamlCLArgParser extends F17CLArgParser
 	private int ocamlParseProtoAndRoleArgs(String f, int i) throws CommandLineException
 	{
 		OCamlCLArgFlag flag = OCamlCLArgParser.OCAML_NON_UNIQUE_FLAGS.get(f);
-		if ((i + 2) >= this.args.length)
+		if ((i + 1) >= this.args.length)
 		{
-			throw new CommandLineException("Missing protocol/role arguments");
+			throw new CommandLineException("Missing protocol argument");
 		}
 		String proto = this.args[++i];
-		String role = this.args[++i];
-		ocamlConcatArgs(flag, proto, role);
+		ocamlConcatArgs(flag, proto);
 		return i;
 	}
 	

@@ -25,7 +25,6 @@ import org.scribble.main.Job;
 import org.scribble.main.JobContext;
 import org.scribble.main.ScribbleException;
 import org.scribble.sesstype.name.GProtocolName;
-import org.scribble.sesstype.name.Role;
 
 public class OCamlCommandLine extends F17CommandLine
 {
@@ -52,8 +51,7 @@ public class OCamlCommandLine extends F17CommandLine
 			for (int i = 0; i < args.length; i += 2)
 			{
 				GProtocolName fullname = checkGlobalProtocolArg(jcontext, args[i]);
-				Role mainrole = checkRoleArg(jcontext, fullname, args[i+1]);
-				String program = new OCamlAPIBuilder(job, fullname, mainrole).generateAPI();
+				String program = new OCamlAPIBuilder(job, fullname).generateAPI();
 				
 				Map<String, String> map = new HashMap<>(); 				
 				map.put(Util.uncapitalise(fullname.getSimpleName().toString()) + ".ml", program);
