@@ -10,7 +10,6 @@ import java.util.stream.Collectors;
 
 import org.scribble.ast.Module;
 import org.scribble.ast.global.GProtocolDecl;
-import org.scribble.ext.ocaml.codegen.Util.GProtocolNameRole;
 import org.scribble.main.Job;
 import org.scribble.main.ScribbleException;
 import org.scribble.model.MState;
@@ -20,14 +19,12 @@ import org.scribble.model.global.SGraph;
 import org.scribble.model.global.SState;
 import org.scribble.model.global.actions.SAction;
 import org.scribble.sesstype.name.GProtocolName;
-import org.scribble.sesstype.name.LProtocolName;
 import org.scribble.sesstype.name.Role;
 
 public class OCamlAPIBuilder {	
 	public final Job job;
 	public final GProtocolName fullname;
 	public final GProtocolDecl protocol;
-	public final Set<LProtocolName> visitedExtra = new HashSet<>();
 
 	public OCamlAPIBuilder(Job job, GProtocolName fullname) {
 		this.job = job;
@@ -43,28 +40,28 @@ public class OCamlAPIBuilder {
 	
 	
 	public static final String roleDeclFormat = 
-			"let role_%ROLE : [`%ROLE] role = Internal.__mkrole \"%PROTOCOL_%ROLE\"";
+			"let role_%ROLE : [`%ROLE] role = Internal.__mkrole \"role_%ROLE\"";
 	
 	public static final String connectorFormat = 
-			"let connect_%ROLE : 'pre 'post. (%PROTOCOL,[`ConnectFirst]) channel -> bindto:(empty, %PROTOCOL_%ROLE sess, 'pre, 'post) slot -> ('pre,'post,unit) monad =\n"
+			"let connect_%ROLE : 'pre 'post. (%PROTOCOL,[`Implicit]) channel -> bindto:(empty, %PROTOCOL_%ROLE sess, 'pre, 'post) slot -> ('pre,'post,unit) monad =\n"
 		  + "  fun ch ->\n"
-          + "  Internal.__connect ~myname:\"%PROTOCOL_%ROLE\" ch";
+          + "  Internal.__connect ~myname:\"role_%ROLE\" ch";
 	
 	public static final String acceptorFormat = 
-			"let accept_%ROLE : 'pre 'post. (%PROTOCOL,[`ConnectFirst]) channel -> bindto:(empty, %PROTOCOL_%ROLE sess, 'pre, 'post) slot -> ('pre,'post,unit) monad =\n"
+			"let accept_%ROLE : 'pre 'post. (%PROTOCOL,[`Implicit]) channel -> bindto:(empty, %PROTOCOL_%ROLE sess, 'pre, 'post) slot -> ('pre,'post,unit) monad =\n"
 		  + "  fun ch ->\n"
-          + "  Internal.__accept ~myname:\"%PROTOCOL_%ROLE\" ~cli_count:%CONNECTCOUNT ch";
+          + "  Internal.__accept ~myname:\"role_%ROLE\" ~cli_count:%CONNECTCOUNT ch";
 	
 	public static final String initiatorFormat = 
-			"let initiate_%ROLE : 'pre 'post. (%PROTOCOL,[`ConnectLater]) channel -> bindto:(empty, %PROTOCOL_%ROLE sess, 'pre, 'post) slot -> ('pre,'post,unit) monad =\n"
+			"let initiate_%ROLE : 'pre 'post. (%PROTOCOL,[`Explicit]) channel -> bindto:(empty, %PROTOCOL_%ROLE sess, 'pre, 'post) slot -> ('pre,'post,unit) monad =\n"
 		  + "  fun ch ->\n"
-          + "  Internal.__initiate ~myname:\"%PROTOCOL_%ROLE\" ch";
+          + "  Internal.__initiate ~myname:\"role_%ROLE\" ch";
 	
 	public static final String newChannelStandardFormat = 
-			"let new_channel_%PROTOCOL : unit -> (%PROTOCOL,[`ConnectFirst]) channel = new_channel";
+			"let new_channel_%PROTOCOL : unit -> (%PROTOCOL,[`Implicit]) channel = new_channel";
 	
 	public static final String newChannelExplicitConnectionFormat = 
-			"let new_channel_%PROTOCOL () : (%PROTOCOL,[`ConnectLater]) channel = Internal.__new_connect_later_channel [%ROLES]";
+			"let new_channel_%PROTOCOL () : (%PROTOCOL,[`Explicit]) channel = Internal.__new_connect_later_channel [%ROLES]";
 	
 	public static final String labelFormat =
 			"let msg_%FUNNAME = {_pack=(fun a -> `%LABEL(a))}";
@@ -93,7 +90,7 @@ public class OCamlAPIBuilder {
 		List<Role> roles = module.getProtocolDecl(this.fullname.getSimpleName()).getHeader().roledecls.getRoles();
 		
 		for(Role role : roles) {
-			OCamlTypeBuilder apigen = new OCamlTypeBuilder(this.job, module, this.fullname, role, this.visitedExtra);
+			OCamlTypeBuilder apigen = new OCamlTypeBuilder(this.job, module, this.fullname, role);
 			buf.append(apigen.build());
 		}
 		return buf.toString();
@@ -101,14 +98,7 @@ public class OCamlAPIBuilder {
 	
 	
 	public String generateRoles() throws ScribbleException {
-		ArrayList<Role> roles = new ArrayList<>(this.protocol.header.roledecls.getRoles());
-		for(LProtocolName local : this.visitedExtra) {
-			GProtocolNameRole pair = Util.getGlobalNameAndRole(this.job.getContext().getMainModule(), local);
-			if(!roles.contains(pair.role)) {
-				roles.add(pair.role);
-			}
-		}
-		return generateRolesWithFormat(roleDeclFormat, roles);
+		return generateRolesWithFormat(roleDeclFormat, this.protocol.header.roledecls.getRoles());
 	}
 	
 	public String generateStandardAcceptorAndConnectors() throws ScribbleException {
@@ -154,11 +144,6 @@ public class OCamlAPIBuilder {
 		TreeSet<String> labels = new TreeSet<>(); 
 		for(Role role : this.protocol.header.roledecls.getRoles()) {
 			EState state = job.getContext().getEGraph(this.fullname, role).init;
-			labels.addAll(labels(state));
-		}
-		for(LProtocolName local : this.visitedExtra) {
-			GProtocolNameRole pair = Util.getGlobalNameAndRole(this.job.getContext().getMainModule(), local);
-			EState state = job.getContext().getEGraph(pair.name, pair.role).init;
 			labels.addAll(labels(state));
 		}
 		return generateLabelsWithFormat(labelFormat, labels);
