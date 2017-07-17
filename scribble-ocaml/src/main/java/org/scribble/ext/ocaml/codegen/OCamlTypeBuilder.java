@@ -2,15 +2,12 @@ package org.scribble.ext.ocaml.codegen;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.scribble.ast.Module;
-import org.scribble.ext.ocaml.codegen.Util.GProtocolNameRole;
 import org.scribble.main.Job;
 import org.scribble.main.ScribbleException;
 import org.scribble.model.endpoint.EGraph;
@@ -24,61 +21,26 @@ import org.scribble.sesstype.name.PayloadType;
 import org.scribble.sesstype.name.Role;
 
 public class OCamlTypeBuilder {
-	public static boolean VISIT_DELEGATED_TYPE = false;
-	
 	public final Job job;
 	public final Module module;
 	public final GProtocolName gpn;
 	public final Role role;
-	public final Set<LProtocolName> visitedExtra;
 	
-	protected final Set<LProtocolName> delegatedProtocols;
-	protected final boolean continuing;
 	protected Map<Integer, String> names = new HashMap<>();
 	protected int nameCounter = 1;
 	
-
-	protected OCamlTypeBuilder(Job job, Module module, GProtocolName gpn, Role role, Set<LProtocolName> visitedExtra, boolean continuing) {
+	public OCamlTypeBuilder(Job job, Module module, GProtocolName gpn, Role role) {
 		this.job = job;
 		this.module = module;
 		this.gpn = gpn;
 		this.role = role;
-		this.visitedExtra = visitedExtra;
-		this.delegatedProtocols = new HashSet<>();
-		this.continuing = continuing;
-	}
-
-	public OCamlTypeBuilder(Job job, Module module, GProtocolName gpn, Role role, Set<LProtocolName> visitedExtra) {
-		this.job = job;
-		this.module = module;
-		this.gpn = gpn;
-		this.role = role;
-		this.visitedExtra = visitedExtra;
-		this.delegatedProtocols = new HashSet<>();
-		this.continuing = false;
 	}
 
 
 	public String build() throws ScribbleException {
-		
-		StringBuffer buf = new StringBuffer();
-		
+		StringBuffer buf = new StringBuffer();		
 		EGraph graph = this.job.getContext().getEGraph(this.gpn, this.role);
 		buf.append(buildTypes(graph.init));
-		
-		if(VISIT_DELEGATED_TYPE) {
-			for(LProtocolName local : this.delegatedProtocols) {
-				if(this.visitedExtra.contains(local)) {
-					continue;
-				}
-				GProtocolNameRole namerole = Util.getGlobalNameAndRole(module, local);
-				
-				OCamlTypeBuilder extra = new OCamlTypeBuilder(this.job, this.module, namerole.name, namerole.role, this.visitedExtra, true);
-				buf.append(extra.build());
-				
-				this.visitedExtra.add(local);
-			}
-		}
 		return buf.toString();
 	}
 	
@@ -86,11 +48,7 @@ public class OCamlTypeBuilder {
 		StringBuffer buf = new StringBuffer();
 		
 		// for delegated type, to be forward-ref'd, we explot mutually recursive types 
-		if(this.continuing) {
-			buf.append("and ");
-		} else {
-			buf.append("type ");
-		}
+		buf.append("type ");
 		
 		// local types
 		List<EState> toplevels = getRecurringStates(start);		
@@ -143,7 +101,6 @@ public class OCamlTypeBuilder {
 		} else if (checkPayloadIsDelegation(payloads)) {
 			LProtocolName delegated = (LProtocolName)payloads.get(0);
 			GProtocolName global = Util.getGlobalNameAndRole(this.job.getContext().getMainModule(), delegated).name;
-			this.delegatedProtocols.add(delegated);
 			String ocamlname = global.getSimpleName().toString() + "."+ Util.uncapitalise(delegated.getSimpleName().toString());			
 			return ocamlname + " sess";
 			
