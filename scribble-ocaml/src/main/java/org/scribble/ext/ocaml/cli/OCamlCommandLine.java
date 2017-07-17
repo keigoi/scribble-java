@@ -63,12 +63,6 @@ public class OCamlCommandLine extends F17CommandLine
 			super.doNonAttemptableOutputTasks(job);
 		}
 	}
-	
-	protected static void tweakF17(String[] args) {
-		
-		
-		
-	}
 
 	public static void main(String[] args) throws CommandLineException, ScribbleException
 	{

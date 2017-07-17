@@ -5,9 +5,12 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
-import org.scribble.ast.ProtocolDecl;
+import org.scribble.ast.Module;
+import org.scribble.ast.global.GProtocolDecl;
+import org.scribble.ext.ocaml.codegen.Util.GProtocolNameRole;
 import org.scribble.main.Job;
 import org.scribble.main.ScribbleException;
 import org.scribble.model.MState;
@@ -17,17 +20,19 @@ import org.scribble.model.global.SGraph;
 import org.scribble.model.global.SState;
 import org.scribble.model.global.actions.SAction;
 import org.scribble.sesstype.name.GProtocolName;
+import org.scribble.sesstype.name.LProtocolName;
 import org.scribble.sesstype.name.Role;
 
-public class OCamlAPIBuilder {
+public class OCamlAPIBuilder {	
 	public final Job job;
 	public final GProtocolName fullname;
-	public final ProtocolDecl<?> protocol;
+	public final GProtocolDecl protocol;
+	public final Set<LProtocolName> visitedExtra = new HashSet<>();
 
 	public OCamlAPIBuilder(Job job, GProtocolName fullname) {
 		this.job = job;
 		this.fullname = fullname;
-		this.protocol = this.job.getContext().getMainModule().getProtocolDecl(fullname.getSimpleName());
+		this.protocol = (GProtocolDecl)this.job.getContext().getMainModule().getProtocolDecl(fullname.getSimpleName());
 	} 
 	
 	public static final String preamble = 
@@ -82,18 +87,28 @@ public class OCamlAPIBuilder {
 	}
 
 	public String generateTypes() throws ScribbleException {
+		
 		StringBuffer buf = new StringBuffer();
-				
-		for(Role role : this.protocol.header.roledecls.getRoles()) {
-			OCamlTypeBuilder apigen = new OCamlTypeBuilder(job, fullname, role, job.getContext().getEGraph(fullname, role));
+		Module module = this.job.getContext().getMainModule();
+		List<Role> roles = module.getProtocolDecl(this.fullname.getSimpleName()).getHeader().roledecls.getRoles();
+		
+		for(Role role : roles) {
+			OCamlTypeBuilder apigen = new OCamlTypeBuilder(this.job, module, this.fullname, role, this.visitedExtra);
 			buf.append(apigen.build());
 		}
-		
 		return buf.toString();
 	}
 	
+	
 	public String generateRoles() throws ScribbleException {
-		return generateRolesWithFormat(roleDeclFormat, this.protocol.header.roledecls.getRoles());
+		ArrayList<Role> roles = new ArrayList<>(this.protocol.header.roledecls.getRoles());
+		for(LProtocolName local : this.visitedExtra) {
+			GProtocolNameRole pair = Util.getGlobalNameAndRole(this.job.getContext().getMainModule(), local);
+			if(!roles.contains(pair.role)) {
+				roles.add(pair.role);
+			}
+		}
+		return generateRolesWithFormat(roleDeclFormat, roles);
 	}
 	
 	public String generateStandardAcceptorAndConnectors() throws ScribbleException {
@@ -136,9 +151,14 @@ public class OCamlAPIBuilder {
 	}
 	
 	public String generateLabels() throws ScribbleException {
-		HashSet<String> labels = new HashSet<>(); 
+		TreeSet<String> labels = new TreeSet<>(); 
 		for(Role role : this.protocol.header.roledecls.getRoles()) {
-			EState state = job.getContext().getEGraph(fullname, role).init;
+			EState state = job.getContext().getEGraph(this.fullname, role).init;
+			labels.addAll(labels(state));
+		}
+		for(LProtocolName local : this.visitedExtra) {
+			GProtocolNameRole pair = Util.getGlobalNameAndRole(this.job.getContext().getMainModule(), local);
+			EState state = job.getContext().getEGraph(pair.name, pair.role).init;
 			labels.addAll(labels(state));
 		}
 		return generateLabelsWithFormat(labelFormat, labels);

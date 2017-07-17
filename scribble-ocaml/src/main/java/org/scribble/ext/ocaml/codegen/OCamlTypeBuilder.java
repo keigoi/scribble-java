@@ -2,12 +2,17 @@ package org.scribble.ext.ocaml.codegen;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.scribble.ast.Module;
+import org.scribble.ext.ocaml.codegen.Util.GProtocolNameRole;
 import org.scribble.main.Job;
+import org.scribble.main.ScribbleException;
 import org.scribble.model.endpoint.EGraph;
 import org.scribble.model.endpoint.EState;
 import org.scribble.model.endpoint.actions.EAction;
@@ -19,30 +24,77 @@ import org.scribble.sesstype.name.PayloadType;
 import org.scribble.sesstype.name.Role;
 
 public class OCamlTypeBuilder {
+	public static boolean VISIT_DELEGATED_TYPE = false;
+	
 	public final Job job;
+	public final Module module;
 	public final GProtocolName gpn;
 	public final Role role;
-	public final EGraph graph;
+	public final Set<LProtocolName> visitedExtra;
+	
+	protected final Set<LProtocolName> delegatedProtocols;
+	protected final boolean continuing;
 	protected Map<Integer, String> names = new HashMap<>();
-	protected int counter = 1; // XXX
+	protected int nameCounter = 1;
+	
 
-	public OCamlTypeBuilder(Job job, GProtocolName gpn, Role role, EGraph graph) {
-		super();
+	protected OCamlTypeBuilder(Job job, Module module, GProtocolName gpn, Role role, Set<LProtocolName> visitedExtra, boolean continuing) {
 		this.job = job;
+		this.module = module;
 		this.gpn = gpn;
 		this.role = role;
-		this.graph = graph;
+		this.visitedExtra = visitedExtra;
+		this.delegatedProtocols = new HashSet<>();
+		this.continuing = continuing;
 	}
 
-	public String build() {
-		return buildTypes(this.graph.init);
+	public OCamlTypeBuilder(Job job, Module module, GProtocolName gpn, Role role, Set<LProtocolName> visitedExtra) {
+		this.job = job;
+		this.module = module;
+		this.gpn = gpn;
+		this.role = role;
+		this.visitedExtra = visitedExtra;
+		this.delegatedProtocols = new HashSet<>();
+		this.continuing = false;
+	}
+
+
+	public String build() throws ScribbleException {
+		
+		StringBuffer buf = new StringBuffer();
+		
+		EGraph graph = this.job.getContext().getEGraph(this.gpn, this.role);
+		buf.append(buildTypes(graph.init));
+		
+		if(VISIT_DELEGATED_TYPE) {
+			for(LProtocolName local : this.delegatedProtocols) {
+				if(this.visitedExtra.contains(local)) {
+					continue;
+				}
+				GProtocolNameRole namerole = Util.getGlobalNameAndRole(module, local);
+				
+				OCamlTypeBuilder extra = new OCamlTypeBuilder(this.job, this.module, namerole.name, namerole.role, this.visitedExtra, true);
+				buf.append(extra.build());
+				
+				this.visitedExtra.add(local);
+			}
+		}
+		return buf.toString();
 	}
 	
-	protected String buildTypes(EState start) {
+	protected String buildTypes(EState start) throws ScribbleException {
 		StringBuffer buf = new StringBuffer();
+		
+		// for delegated type, to be forward-ref'd, we explot mutually recursive types 
+		if(this.continuing) {
+			buf.append("and ");
+		} else {
+			buf.append("type ");
+		}
+		
 		// local types
 		List<EState> toplevels = getRecurringStates(start);		
-		buf.append("type " + Util.uncapitalise(gpn.getSimpleName().toString()) + "_" + this.role + " = " + getStateChanName(start) + "\n");
+		buf.append(Util.uncapitalise(gpn.getSimpleName().toString()) + "_" + this.role + " = " + getStateChanName(start) + "\n");
 		for(EState me : toplevels) {
 			buf.append("and " + getStateChanName(me) + " = \n");
 			buildTypes(me, buf, toplevels, 0);
@@ -84,11 +136,17 @@ public class OCamlTypeBuilder {
 		}
 	}
 
-	protected static String payloadTypesToString(List<PayloadType<?>> payloads) {
+	protected String payloadTypesToString(List<PayloadType<?>> payloads) throws ScribbleException {
 		if(payloads.isEmpty()) {
 			return "unit data";
+			
 		} else if (checkPayloadIsDelegation(payloads)) {
-			return Util.uncapitalise(payloads.get(0).toString()) + " sess";
+			LProtocolName delegated = (LProtocolName)payloads.get(0);
+			GProtocolName global = Util.getGlobalNameAndRole(this.job.getContext().getMainModule(), delegated).name;
+			this.delegatedProtocols.add(delegated);
+			String ocamlname = global.getSimpleName().toString() + "."+ Util.uncapitalise(delegated.getSimpleName().toString());			
+			return ocamlname + " sess";
+			
 		} else if (payloads.size()==1) {
 			return Util.uncapitalise(payloads.get(0).toString()) + " data";
 		} else {
@@ -145,7 +203,7 @@ public class OCamlTypeBuilder {
 		}
 	}
 
-	protected void buildTypes(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
+	protected void buildTypes(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException {
 
 		indent(buf, level);
 
@@ -177,7 +235,7 @@ public class OCamlTypeBuilder {
 		}
 	}
 
-	protected void output(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
+	protected void output(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException {
 		// output can contain both datatype and non-datatype payload
 
 		boolean isDisConnect = checkAllActions(curr.getActions(), (EAction a) -> a.isDisconnect());
@@ -219,7 +277,7 @@ public class OCamlTypeBuilder {
 		level--;
 	}
 	
-	protected void unaryInput(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
+	protected void unaryInput(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException {
 		EAction action = getSingleAction(curr);
 		List<PayloadType<?>> payloads = action.payload.elems;
 		buf.append("[`recv of [`" + action.peer + "] role * [`" + Util.label(action.mid) + " of " + payloadTypesToString(payloads) + " *\n");
@@ -241,7 +299,7 @@ public class OCamlTypeBuilder {
 		return r;
 	}
 	
-	protected void polyInput(EState curr, StringBuffer buf, List<EState> toplevel, int level, boolean accept) {
+	protected void polyInput(EState curr, StringBuffer buf, List<EState> toplevel, int level, boolean accept) throws ScribbleException {
 		String prefix;
 		if(accept) {
 			prefix = "[`accept of ";
@@ -251,7 +309,7 @@ public class OCamlTypeBuilder {
 		buf.append(prefix);
 		
 		Role peer = getPeer(curr);
-		buf.append("[`" + peer + "] role * ");
+		buf.append("[`" + peer + "] role *\n");
 		
 		level++;
 		indent(buf, level);
@@ -286,7 +344,7 @@ public class OCamlTypeBuilder {
 	}
 	
 	protected String makeSTStateName(EState s) {
-		String name = this.gpn.getSimpleName() + "_" + role + "_" + this.counter++;
+		String name = this.gpn.getSimpleName() + "_" + role + "_" + this.nameCounter++;
 		return Util.uncapitalise(name);
 	}
 
