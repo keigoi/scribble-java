@@ -86,14 +86,16 @@ public class OCamlTypeBuilder {
 
 	protected static String payloadTypesToString(List<PayloadType<?>> payloads) {
 		if(payloads.isEmpty()) {
-			return "unit";
+			return "unit data";
+		} else if (checkPayloadIsDelegation(payloads)) {
+			return Util.uncapitalise(payloads.get(0).toString()) + " sess";
 		} else if (payloads.size()==1) {
-			return Util.uncapitalise(payloads.get(0).toString());
+			return Util.uncapitalise(payloads.get(0).toString()) + " data";
 		} else {
 			return "(" + payloads.stream()
 					.map(PayloadType::toString)
 					.map(Util::uncapitalise) // ad hoc renaming -- String -> string for example
-					.collect(Collectors.joining(" * ")) + ")";
+					.collect(Collectors.joining(" * ")) + ") data";
 		}
 	}
 
@@ -200,44 +202,56 @@ public class OCamlTypeBuilder {
 				indent(buf, level);
 				buf.append("|");
 			}
+			middle = true;
 			
 			String roleSuffix = action.isConnect() ? " connect" : "";
 
 			List<PayloadType<?>> payloads = action.payload.elems;
-			checkPayloadIsDelegation(payloads);
 
 			buf.append("`" + Util.label(action.mid) + " of [`" + action.peer + "] role" + roleSuffix + " * " + payloadTypesToString(payloads) + " *\n");
 
 			EState succ = curr.getSuccessor(action);
 			buildTypes(succ, buf, toplevel, level + 1);
-
-			middle = true;
+			
+			buf.append(" sess");
 		}
 		buf.append("]]");
 		level--;
 	}
+	
 	protected void unaryInput(EState curr, StringBuffer buf, List<EState> toplevel, int level) {
 		EAction action = getSingleAction(curr);
 		List<PayloadType<?>> payloads = action.payload.elems;
-		if (checkPayloadIsDelegation(payloads)) {
-			buf.append("[`deleg_recv of [`" + Util.label(action.mid) + " of [`" + action.peer + "] role * ");
-			buf.append(payloads.get(0).toString() + "\n");
-		} else {
-			buf.append("[`recv of [`" + Util.label(action.mid) + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
-		}
+		buf.append("[`recv of [`" + action.peer + "] role * [`" + Util.label(action.mid) + " of " + payloadTypesToString(payloads) + " *\n");
+		
 		EState succ = curr.getSuccessor(action);
 		buildTypes(succ, buf, toplevel, level + 1);
-		buf.append("]]");
+		buf.append(" sess]]");
+	}
+	
+	protected Role getPeer(EState curr) {
+		Role r = null;
+		for(EAction action : curr.getActions()) {
+			if(r == null) {
+				r = action.peer;
+			} else if(!r.equals(action.peer)) {
+				throw new RuntimeException("receiving from different peer: " + r + " and " + action.peer); 
+			}
+		}
+		return r;
 	}
 	
 	protected void polyInput(EState curr, StringBuffer buf, List<EState> toplevel, int level, boolean accept) {
 		String prefix;
 		if(accept) {
-			prefix = "[`accept of\n";
+			prefix = "[`accept of ";
 		} else {
-			prefix = "[`recv of\n";
+			prefix = "[`recv of ";
 		}
 		buf.append(prefix);
+		
+		Role peer = getPeer(curr);
+		buf.append("[`" + peer + "] role * ");
 		
 		level++;
 		indent(buf, level);
@@ -246,18 +260,16 @@ public class OCamlTypeBuilder {
 		boolean mid = false;
 		for (EAction action : curr.getActions()) {
 			List<PayloadType<?>> payloads = action.payload.elems;
-			if (checkPayloadIsDelegation(payloads)) {
-				throw new RuntimeException("[OCaml] payload cannot contain delegation in multiple input branch");
-			}
 			if(mid) {
 				buf.append("\n");
 				indent(buf, level);
 				buf.append("|");
 			}
 			mid = true;
-			buf.append("`" + Util.label(action.mid) + " of [`" + action.peer + "] role * " + payloadTypesToString(payloads) + " *\n");
+			buf.append("`" + Util.label(action.mid) + " of " + payloadTypesToString(payloads) + " *\n");
 			EState succ = curr.getSuccessor(action);
 			buildTypes(succ, buf, toplevel, level + 1);
+			buf.append(" sess");
 		}
 		buf.append("]]");
 		level--;
