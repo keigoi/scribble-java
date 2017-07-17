@@ -130,7 +130,7 @@ public class OCamlAPIBuilder {
 		String protname = Util.uncapitalise(fullname.getSimpleName().toString());
 		String rolesstr = 
 				roles.stream()
-				.map((Role r) -> '"' + protname + "_" + r.toString() + '"')
+				.map((Role r) -> '"' + "role_" + r.toString() + '"')
 				.collect(Collectors.joining(";"));
 		String newchannel =
 				newChannelExplicitConnectionFormat
