@@ -43,17 +43,17 @@ public class OCamlAPIBuilder {
 			"let role_%ROLE : [`%ROLE] role = Internal.__mkrole \"role_%ROLE\"";
 	
 	public static final String connectorFormat = 
-			"let connect_%ROLE : 'pre 'post. (%PROTOCOL,[`Implicit]) channel -> ('c, 'c, %PROTOCOL_%ROLE sess) lin_match =\n"
+			"let connect_%ROLE : 'pre 'post. (%PROTOCOL,[`Implicit]) channel -> ('c, 'c, %PROTOCOL_%ROLE sess) monad =\n"
 		  + "  fun ch ->\n"
           + "  Internal.__connect ~myname:\"role_%ROLE\" ch";
 	
 	public static final String acceptorFormat = 
-			"let accept_%ROLE : 'pre 'post. (%PROTOCOL,[`Implicit]) channel -> ('c, 'c, %PROTOCOL_%ROLE sess) lin_match =\n"
+			"let accept_%ROLE : 'pre 'post. (%PROTOCOL,[`Implicit]) channel -> ('c, 'c, %PROTOCOL_%ROLE sess) monad =\n"
 		  + "  fun ch ->\n"
           + "  Internal.__accept ~myname:\"role_%ROLE\" ~cli_count:%CONNECTCOUNT ch";
 	
 	public static final String initiatorFormat = 
-			"let initiate_%ROLE : 'pre 'post. (%PROTOCOL,[`Explicit]) channel -> ('c, 'c, %PROTOCOL_%ROLE sess) lin_match =\n"
+			"let initiate_%ROLE : 'pre 'post. (%PROTOCOL,[`Explicit]) channel -> ('c, 'c, %PROTOCOL_%ROLE sess) monad =\n"
 		  + "  fun ch ->\n"
           + "  Internal.__initiate ~myname:\"role_%ROLE\" ch";
 	
