@@ -34,8 +34,8 @@ public class OCamlAPIBuilder {
 	
 	public static final String preamble = 
 		  "(* Generated from scribble-ocaml https://github.com/keigoi/scribble-ocaml\n"
-		+ " * This code should be compiled with session-ocaml (multiparty)\n"
-		+ " * https://github.com/keigoi/session-ocaml/tree/multiparty *)\n"
+		+ " * This code should be compiled with scribble-ocaml-runtime\n"
+		+ " * https://github.com/keigoi/scribble-ocaml-runtime *)\n"
 		+ "open Multiparty";
 	
 	
