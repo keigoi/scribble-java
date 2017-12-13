@@ -9,11 +9,11 @@ import org.scribble.ast.global.GProtocolDecl;
 import org.scribble.main.ScribbleException;
 import org.scribble.model.MAction;
 import org.scribble.model.MState;
-import org.scribble.sesstype.kind.ProtocolKind;
-import org.scribble.sesstype.name.GProtocolName;
-import org.scribble.sesstype.name.LProtocolName;
-import org.scribble.sesstype.name.MessageId;
-import org.scribble.sesstype.name.Role;
+import org.scribble.type.kind.ProtocolKind;
+import org.scribble.type.name.GProtocolName;
+import org.scribble.type.name.LProtocolName;
+import org.scribble.type.name.MessageId;
+import org.scribble.type.name.Role;
 
 public class Util {
 

@@ -32,10 +32,6 @@
 			<artifactId>scribble-codegen</artifactId>
 		</dependency>
 		<dependency>
-			<groupId>org.scribble</groupId>
-			<artifactId>scribble-f17</artifactId>
-		</dependency>
-		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
 			<scope>test</scope>

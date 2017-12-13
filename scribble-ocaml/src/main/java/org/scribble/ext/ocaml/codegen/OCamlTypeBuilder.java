@@ -13,12 +13,12 @@ import org.scribble.main.ScribbleException;
 import org.scribble.model.endpoint.EGraph;
 import org.scribble.model.endpoint.EState;
 import org.scribble.model.endpoint.actions.EAction;
-import org.scribble.sesstype.name.DataType;
-import org.scribble.sesstype.name.GDelegationType;
-import org.scribble.sesstype.name.GProtocolName;
-import org.scribble.sesstype.name.LProtocolName;
-import org.scribble.sesstype.name.PayloadType;
-import org.scribble.sesstype.name.Role;
+import org.scribble.type.name.DataType;
+import org.scribble.type.name.GDelegationType;
+import org.scribble.type.name.GProtocolName;
+import org.scribble.type.name.LProtocolName;
+import org.scribble.type.name.PayloadElemType;
+import org.scribble.type.name.Role;
 
 public class OCamlTypeBuilder {
 	public final Job job;
@@ -94,7 +94,7 @@ public class OCamlTypeBuilder {
 		}
 	}
 
-	protected String payloadTypesToString(List<PayloadType<?>> payloads) throws ScribbleException {
+	protected String payloadTypesToString(List<PayloadElemType<?>> payloads) throws ScribbleException {
 		if(payloads.isEmpty()) {
 			return "unit data";
 			
@@ -108,7 +108,7 @@ public class OCamlTypeBuilder {
 			return Util.uncapitalise(payloads.get(0).toString()) + " data";
 		} else {
 			return "(" + payloads.stream()
-					.map(PayloadType::toString)
+					.map(PayloadElemType::toString)
 					.map(Util::uncapitalise) // ad hoc renaming -- String -> string for example
 					.collect(Collectors.joining(" * ")) + ") data";
 		}
@@ -130,12 +130,12 @@ public class OCamlTypeBuilder {
 		return found;
 	}
 
-	protected static boolean checkPayloadIsDelegation(List<PayloadType<?>> payloads) {
+	protected static boolean checkPayloadIsDelegation(List<PayloadElemType<?>> payloads) {
 		if (payloads.size() == 0) {
 			return false;
 		}
-		List<PayloadType<?>> dataPayloads = payloads.stream()
-				.filter((PayloadType<?> p) -> p.getClass().equals(DataType.class)).collect(Collectors.toList());
+		List<PayloadElemType<?>> dataPayloads = payloads.stream()
+				.filter((PayloadElemType<?> p) -> p.getClass().equals(DataType.class)).collect(Collectors.toList());
 
 		if (payloads.size() == dataPayloads.size()) {
 
@@ -143,10 +143,10 @@ public class OCamlTypeBuilder {
 
 		} else if (payloads.size() == 1) {
 
-			PayloadType<?> payload = payloads.get(0);
+			PayloadElemType<?> payload = payloads.get(0);
 
 			@SuppressWarnings("rawtypes")
-			Class<? extends PayloadType> clazz = payload.getClass();
+			Class<? extends PayloadElemType> clazz = payload.getClass();
 
 			if (clazz.equals(LProtocolName.class)) {
 				return true;
@@ -219,9 +219,9 @@ public class OCamlTypeBuilder {
 			}
 			middle = true;
 			
-			String roleSuffix = action.isConnect() ? " connect" : "";
+			String roleSuffix = action.isRequest() ? " connect" : "";
 
-			List<PayloadType<?>> payloads = action.payload.elems;
+			List<PayloadElemType<?>> payloads = action.payload.elems;
 
 			buf.append("`" + Util.label(action.mid) + " of [`" + action.peer + "] role" + roleSuffix + " * " + payloadTypesToString(payloads) + " *\n");
 
@@ -236,7 +236,7 @@ public class OCamlTypeBuilder {
 	
 	protected void unaryInput(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException {
 		EAction action = getSingleAction(curr);
-		List<PayloadType<?>> payloads = action.payload.elems;
+		List<PayloadElemType<?>> payloads = action.payload.elems;
 		buf.append("[`recv of [`" + action.peer + "] role * [`" + Util.label(action.mid) + " of " + payloadTypesToString(payloads) + " *\n");
 		
 		EState succ = curr.getSuccessor(action);
@@ -274,7 +274,7 @@ public class OCamlTypeBuilder {
 		
 		boolean mid = false;
 		for (EAction action : curr.getActions()) {
-			List<PayloadType<?>> payloads = action.payload.elems;
+			List<PayloadElemType<?>> payloads = action.payload.elems;
 			if(mid) {
 				buf.append("\n");
 				indent(buf, level);
