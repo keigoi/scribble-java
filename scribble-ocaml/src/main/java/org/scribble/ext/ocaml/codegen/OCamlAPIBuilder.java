@@ -36,32 +36,29 @@ public class OCamlAPIBuilder {
 		  "(* Generated from scribble-ocaml https://github.com/keigoi/scribble-ocaml\n"
 		+ " * This code should be compiled with scribble-ocaml-runtime\n"
 		+ " * https://github.com/keigoi/scribble-ocaml-runtime *)\n"
-		+ "open Multiparty";
+		+ "open Scribble.Direct (* or: open Scribble_lwt *)";
 	
 	
 	public static final String roleDeclFormat = 
-			"let role_%ROLE : [`%ROLE] role = Internal.__mkrole \"role_%ROLE\"";
+			"let mk_role_%ROLE c : ([`%ROLE], _) role = Internal.__mkrole c \"role_%ROLE\"";
 	
 	public static final String connectorFormat = 
-			"let connect_%ROLE : 'pre 'post. (%PROTOCOL,[`Implicit]) channel -> ('c, 'c, %PROTOCOL_%ROLE sess) monad =\n"
+			"let connect_%ROLE : (%PROTOCOL,[`Implicit]) channel -> ('c, 'c, %CONN_PARAMS %PROTOCOL_%ROLE sess) monad =\n"
 		  + "  fun ch ->\n"
           + "  Internal.__connect ~myname:\"role_%ROLE\" ch";
 	
 	public static final String acceptorFormat = 
-			"let accept_%ROLE : 'pre 'post. (%PROTOCOL,[`Implicit]) channel -> ('c, 'c, %PROTOCOL_%ROLE sess) monad =\n"
+			"let accept_%ROLE : (%PROTOCOL,[`Implicit]) channel -> ('c, 'c, %CONN_PARAMS %PROTOCOL_%ROLE sess) monad =\n"
 		  + "  fun ch ->\n"
           + "  Internal.__accept ~myname:\"role_%ROLE\" ~cli_count:%CONNECTCOUNT ch";
 	
 	public static final String initiatorFormat = 
-			"let initiate_%ROLE : 'pre 'post. (%PROTOCOL,[`Explicit]) channel -> ('c, 'c, %PROTOCOL_%ROLE sess) monad =\n"
-		  + "  fun ch ->\n"
-          + "  Internal.__initiate ~myname:\"role_%ROLE\" ch";
+			"let initiate_%ROLE : unit -> ('c, 'c, %CONN_PARAMS %PROTOCOL_%ROLE sess) monad =\n"
+		  + "  fun () ->\n"
+          + "  Internal.__initiate ~myname:\"role_%ROLE\"";
 	
 	public static final String newChannelStandardFormat = 
 			"let new_channel_%PROTOCOL : unit -> (%PROTOCOL,[`Implicit]) channel = new_channel";
-	
-	public static final String newChannelExplicitConnectionFormat = 
-			"let new_channel_%PROTOCOL () : (%PROTOCOL,[`Explicit]) channel = Internal.__new_connect_later_channel [%ROLES]";
 	
 	public static final String labelFormat =
 			"let msg_%FUNNAME = {_pack=(fun a -> `%LABEL(a))}";
@@ -125,19 +122,7 @@ public class OCamlAPIBuilder {
 	public String generateInitiators() throws ScribbleException {
 		List<Role> roles = this.protocol.header.roledecls.getRoles();
 		
-		String initiators = generateRolesWithFormat(initiatorFormat, roles);
-		
-		String protname = Util.uncapitalise(fullname.getSimpleName().toString());
-		String rolesstr = 
-				roles.stream()
-				.map((Role r) -> '"' + "role_" + r.toString() + '"')
-				.collect(Collectors.joining(";"));
-		String newchannel =
-				newChannelExplicitConnectionFormat
-				.replace("%PROTOCOL", protname)
-				.replace("%ROLES",  rolesstr);;
-				
-		return initiators + "\n" + newchannel;
+		return generateRolesWithFormat(initiatorFormat, roles);
 	}
 	
 	public String generateLabels() throws ScribbleException {
@@ -155,7 +140,11 @@ public class OCamlAPIBuilder {
 		for(Role role : roles) {
 			String rolename = role.toString();
 			String protname = Util.uncapitalise(fullname.getSimpleName().toString());
-			String code = format.replace("%ROLE", rolename).replace("%PROTOCOL", protname);
+			String code = 
+					format
+					.replace("%ROLE", rolename)
+					.replace("%PROTOCOL", protname)
+					.replace("%CONN_PARAMS", Util.getRoleConnTypeParams(roles, role));
 			buf.append(code);
 			buf.append('\n');
 		}

@@ -45,20 +45,29 @@ public class OCamlTypeBuilder {
 	}
 	
 	protected String buildTypes(EState start) throws ScribbleException {
-		StringBuffer buf = new StringBuffer();
+		// to enable delegated type to be forward-ref'd, types are declared as mutually recursive types
 		
-		// for delegated type, to be forward-ref'd, we explot mutually recursive types 
-		buf.append("type ");
+		StringBuffer buf = new StringBuffer();
+		String roleConnTypeParams = getRoleConnTypeParams();
+		
+		buf.append("type " + roleConnTypeParams + " ");
 		
 		// local types
 		List<EState> toplevels = getRecurringStates(start);		
-		buf.append(Util.uncapitalise(gpn.getSimpleName().toString()) + "_" + this.role + " = " + getStateChanName(start) + "\n");
+		buf.append(Util.uncapitalise(gpn.getSimpleName().toString()) + "_" + this.role 
+				+ " = " + roleConnTypeParams + " " + getStateChanName(start) + "\n");
+		
 		for(EState me : toplevels) {
-			buf.append("and " + getStateChanName(me) + " = \n");
+			buf.append("and " + roleConnTypeParams + " " + getStateChanName(me) + " =\n");
 			buildTypes(me, buf, toplevels, 0);
 			buf.append("\n");
 		}
 		return buf.toString();
+	}
+	
+	protected String getRoleConnTypeParams() {
+		List<Role> roles = module.getProtocolDecl(this.gpn.getSimpleName()).getHeader().roledecls.getRoles();
+		return Util.getRoleConnTypeParams(roles, this.role);
 	}
 	
 	// traverse the graph to gather recurring states which will be declared at the top level
@@ -165,6 +174,7 @@ public class OCamlTypeBuilder {
 		indent(buf, level);
 
 		if (level != 0 && toplevel.contains(curr)) {
+			buf.append(getRoleConnTypeParams() + " ");
 			buf.append(getStateChanName(curr));
 			return;
 		}
@@ -223,7 +233,11 @@ public class OCamlTypeBuilder {
 
 			List<PayloadElemType<?>> payloads = action.payload.elems;
 
-			buf.append("`" + Util.label(action.mid) + " of [`" + action.peer + "] role" + roleSuffix + " * " + payloadTypesToString(payloads) + " *\n");
+			buf.append("`" + Util.label(action.mid) 
+					+ " of ([`" + action.peer + "], 'c_" + action.peer + ") role" 
+					+ roleSuffix 
+					+ " * " + payloadTypesToString(payloads) 
+					+ " *\n");
 
 			EState succ = curr.getSuccessor(action);
 			buildTypes(succ, buf, toplevel, level + 1);
@@ -237,7 +251,10 @@ public class OCamlTypeBuilder {
 	protected void unaryInput(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException {
 		EAction action = getSingleAction(curr);
 		List<PayloadElemType<?>> payloads = action.payload.elems;
-		buf.append("[`recv of [`" + action.peer + "] role * [`" + Util.label(action.mid) + " of " + payloadTypesToString(payloads) + " *\n");
+		buf.append("[`recv of ([`" + action.peer + "], 'c_" + action.peer + ") role * "
+				+"[`" + Util.label(action.mid)
+				+ " of " + payloadTypesToString(payloads) 
+				+ " *\n");
 		
 		EState succ = curr.getSuccessor(action);
 		buildTypes(succ, buf, toplevel, level + 1);
@@ -266,7 +283,7 @@ public class OCamlTypeBuilder {
 		buf.append(prefix);
 		
 		Role peer = getPeer(curr);
-		buf.append("[`" + peer + "] role *\n");
+		buf.append("([`" + peer + "], 'c_" + peer + ") role *\n");
 		
 		level++;
 		indent(buf, level);

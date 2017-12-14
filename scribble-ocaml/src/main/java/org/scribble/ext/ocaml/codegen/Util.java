@@ -86,4 +86,19 @@ public class Util {
 		throw new RuntimeException("[OCaml] cannot find GProtocolName from LProtocolName " + local);
 	}
 
+	public static String getRoleConnTypeParams(List<Role> roles, Role myrole) {
+		StringBuffer buf = new StringBuffer();
+		boolean multiple = false;
+		for(Role role : roles) {
+			if(role.equals(myrole)) continue;
+			if( multiple ) {
+				buf.append(", ");
+			} else {
+				multiple = true;				
+			}
+			buf.append("'c_" + role);
+		}
+		return multiple ? "(" + buf.toString() + ")" : buf.toString();
+	}
+
 }
