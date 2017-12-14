@@ -181,7 +181,12 @@ public class OCamlTypeBuilder {
 
 		switch (curr.getStateKind()) {
 		case OUTPUT:
-			output(curr, buf, toplevel, level);
+			boolean isDisconnect = checkAllActions(curr.getActions(), (EAction a) -> a.isDisconnect());
+			if (isDisconnect) {
+				disconnect(curr, buf, toplevel, level);
+			} else {				
+				output(curr, buf, toplevel, level);
+			}
 			break;
 		case UNARY_INPUT:
 			unaryInput(curr, buf, toplevel, level);
@@ -205,13 +210,7 @@ public class OCamlTypeBuilder {
 	protected void output(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException {
 		// output can contain both datatype and non-datatype payload
 
-		boolean isDisConnect = checkAllActions(curr.getActions(), (EAction a) -> a.isDisconnect());
-		String prefix;
-		if(isDisConnect) {
-			prefix = "[`disconnect of\n";			
-		} else {
-			prefix = "[`send of\n";
-		}
+		String prefix= "[`send of\n";
 		buf.append(prefix);
 		
 		level++;
@@ -246,6 +245,18 @@ public class OCamlTypeBuilder {
 		}
 		buf.append("]]");
 		level--;
+	}
+	
+	protected void disconnect(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException  {
+		// labels and paylaods are ignored
+		EAction action = getSingleAction(curr);
+
+		String prefix = "[`disconnect of ([`" + action.peer + "], 'c_" + action.peer + ") role *\n";
+		buf.append(prefix);
+				
+		EState succ = curr.getSuccessor(action);
+		buildTypes(succ, buf, toplevel, level + 1);
+		buf.append(" sess]");
 	}
 	
 	protected void unaryInput(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException {
