@@ -72,14 +72,14 @@ public class Util {
 	}
 	
 	// brain-dead approach to recover global name from a local name
-	public static GProtocolNameRole getGlobalNameAndRole(Module module, LProtocolName local) throws ScribbleException {
+	public static GProtocolName searchGlobalProtocolName(Module module, LProtocolName local) throws ScribbleException {
 		String localname = local.getSimpleName().toString();
 		for (GProtocolDecl global : module.getGlobalProtocolDecls()) {
 			GProtocolName name = global.getHeader().getDeclName();
 			String globalname = name.getSimpleName().toString();
 			for (Role role : global.header.roledecls.getRoles()) {
 				if (localname.equals(globalname + "_" + role.toString())) {
-					return new GProtocolNameRole(new GProtocolName(module.getFullModuleName(), name), role);
+					return new GProtocolNameRole(new GProtocolName(module.getFullModuleName(), name), role).name;
 				}
 			}
 		}

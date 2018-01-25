@@ -1,9 +1,12 @@
 package org.scribble.ext.ocaml.codegen;
 
+import static java.util.Comparator.comparing;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -26,6 +29,8 @@ public class OCamlTypeBuilder {
 	public final GProtocolName gpn;
 	public final Role role;
 	
+	private int indent_level;
+	
 	protected Map<Integer, String> names = new HashMap<>();
 	protected int nameCounter = 1;
 	
@@ -40,11 +45,11 @@ public class OCamlTypeBuilder {
 	public String build() throws ScribbleException {
 		StringBuffer buf = new StringBuffer();		
 		EGraph graph = this.job.getContext().getEGraph(this.gpn, this.role);
-		buf.append(buildTypes(graph.init));
+		buf.append(buildTypesStart(graph.init));
 		return buf.toString();
 	}
 	
-	protected String buildTypes(EState start) throws ScribbleException {
+	protected String buildTypesStart(EState start) {
 		// to enable delegated type to be forward-ref'd, types are declared as mutually recursive types
 		
 		StringBuffer buf = new StringBuffer();
@@ -59,7 +64,8 @@ public class OCamlTypeBuilder {
 		
 		for(EState me : toplevels) {
 			buf.append("and " + roleConnTypeParams + " " + getStateChanName(me) + " =\n");
-			buildTypes(me, buf, toplevels, 0);
+			this.indent_level = 0;
+			buildTypes(me, buf, toplevels);
 			buf.append("\n");
 		}
 		return buf.toString();
@@ -97,20 +103,37 @@ public class OCamlTypeBuilder {
 	}
 
 	// indent == -1 is the rightmost 
-	protected static void indent(StringBuffer buf, int level) {
-		for (int i = 0; i < (level + 1) * 2; i++) {
+	protected void indent_(StringBuffer buf) {
+		for (int i = 0; i < (indent_level + 1) * 2; i++) {
 			buf.append(' ');
 		}
 	}
+	
+	protected <T> void iterate(StringBuffer buf, List<T> list, Consumer<T> f) {
+		if (list.size() > 1) {
+			this.indent_level++;
+			for(T v : list) {
+				buf.append("\n");
+				for (int i = 0; i < (indent_level + 1) * 2; i++) {
+					buf.append(' ');
+				}
+				f.accept(v);
+			}
+			this.indent_level--;
+		} else {
+			buf.append(" ");
+			f.accept(list.get(0));
+		}
+	}
 
-	protected String payloadTypesToString(List<PayloadElemType<?>> payloads) throws ScribbleException {
+	public static String payloadTypesToString(List<PayloadElemType<?>> payloads) {
 		if(payloads.isEmpty()) {
 			return "unit data";
 			
 		} else if (checkPayloadIsDelegation(payloads)) {
-			LProtocolName delegated = (LProtocolName)payloads.get(0);
-			GProtocolName global = Util.getGlobalNameAndRole(this.job.getContext().getMainModule(), delegated).name;
-			String ocamlname = global.getSimpleName().toString() + "."+ Util.uncapitalise(delegated.getSimpleName().toString());			
+			String delegatedLocalProtoclName = ((LProtocolName)payloads.get(0)).getSimpleName().toString();
+			String globalName = delegatedLocalProtoclName.substring(0, delegatedLocalProtoclName.lastIndexOf('_'));
+			String ocamlname = globalName + "."+ Util.uncapitalise(delegatedLocalProtoclName);			
 			return ocamlname + " sess";
 			
 		} else if (payloads.size()==1) {
@@ -169,11 +192,11 @@ public class OCamlTypeBuilder {
 		}
 	}
 
-	protected void buildTypes(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException {
+	protected void buildTypes(EState curr, StringBuffer buf, List<EState> toplevel) {
 
-		indent(buf, level);
+		indent_(buf);
 
-		if (level != 0 && toplevel.contains(curr)) {
+		if (this.indent_level != 0 && toplevel.contains(curr)) {
 			buf.append(getRoleConnTypeParams() + " ");
 			buf.append(getStateChanName(curr));
 			return;
@@ -183,22 +206,22 @@ public class OCamlTypeBuilder {
 		case OUTPUT:
 			boolean isDisconnect = checkAllActions(curr.getActions(), (EAction a) -> a.isDisconnect());
 			if (isDisconnect) {
-				disconnect(curr, buf, toplevel, level);
+				disconnect(curr, buf, toplevel);
 			} else {				
-				output(curr, buf, toplevel, level);
+				output(curr, buf, toplevel);
 			}
 			break;
 		case UNARY_INPUT:
-			unaryInput(curr, buf, toplevel, level);
+			unaryInput(curr, buf, toplevel);
 			break;
 		case POLY_INPUT:
-			polyInput(curr, buf, toplevel, level, false);
+			polyInput(curr, buf, toplevel, false);
 			break;
 		case TERMINAL:
 			buf.append("[`close]");
 			break;
 		case ACCEPT:
-			polyInput(curr, buf, toplevel, level, true);
+			polyInput(curr, buf, toplevel, true);
 			break;
 		case WRAP_SERVER:
 			throw new RuntimeException("TODO");
@@ -207,69 +230,99 @@ public class OCamlTypeBuilder {
 		}
 	}
 
-	protected void output(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException {
+	protected void output(EState curr, StringBuffer buf, List<EState> toplevel) {
 		// output can contain both datatype and non-datatype payload
 
-		String prefix= "[`send of\n";
+		String prefix= curr.getActions().get(0).isRequest() 
+				? "[`connect of"
+				: "[`send of";
+
 		buf.append(prefix);
+				
+		boolean[] role_middle = {false};
 		
-		level++;
-		indent(buf, level);
-		buf.append("[");
-		
-		boolean middle = false;
-
-		for (EAction action : curr.getActions()) {
-
-			if (middle) {
-				buf.append("\n");
-				indent(buf, level);
+		iterate(buf, getRoles(curr), (Role role) -> {
+			
+			if (role_middle[0]) {
 				buf.append("|");
+			} else { 
+				buf.append("[");
+				role_middle[0] = true;
 			}
-			middle = true;
+
+			buf.append("`" + role + " of 'c_" + role + " *");
 			
-			String roleSuffix = action.isRequest() ? " connect" : "";
+			boolean[] label_middle = {false};
 
-			List<PayloadElemType<?>> payloads = action.payload.elems;
+			iterate(buf, getActions(curr, role), (EAction action) -> {
+				
+				if (label_middle[0]) {
+					buf.append("|");
+				} else { 
+					buf.append("[");
+					label_middle[0] = true;
+				}
 
-			buf.append("`" + Util.label(action.mid) 
-					+ " of ([`" + action.peer + "], 'c_" + action.peer + ") role" 
-					+ roleSuffix 
-					+ " * " + payloadTypesToString(payloads) 
-					+ " *\n");
+				List<PayloadElemType<?>> payloads = action.payload.elems;
 
-			EState succ = curr.getSuccessor(action);
-			buildTypes(succ, buf, toplevel, level + 1);
-			
-			buf.append(" sess");
-		}
-		buf.append("]]");
-		level--;
+				buf.append("`" + Util.label(action.mid)
+						+ " of " + payloadTypesToString(payloads) + " *\n");
+
+				EState succ = curr.getSuccessor(action);
+				this.indent_level++;
+				buildTypes(succ, buf, toplevel);
+				this.indent_level--;
+
+				buf.append(" sess");
+			});
+		});
+		buf.append("]]]");
+		
 	}
 	
-	protected void disconnect(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException  {
+	protected List<Role> getRoles(EState curr) {
+		return curr.getActions()
+				.stream()
+				.map(a -> a.peer)
+				.sorted(comparing(Role::toString))
+				.distinct()
+				.collect(Collectors.toList());
+	}
+	
+	protected List<EAction> getActions(EState curr, Role peer) {
+		return curr.getActions()
+				.stream()
+				.filter(a -> a.peer.equals(peer))
+				.collect(Collectors.toList());
+	}
+	
+	protected void disconnect(EState curr, StringBuffer buf, List<EState> toplevel) {
 		// labels and paylaods are ignored
 		EAction action = getSingleAction(curr);
 
-		String prefix = "[`disconnect of ([`" + action.peer + "], 'c_" + action.peer + ") role *\n";
+		String prefix = "[`disconnect of [`" + action.peer + " of 'c_" + action.peer + " * \n";
 		buf.append(prefix);
 				
 		EState succ = curr.getSuccessor(action);
-		buildTypes(succ, buf, toplevel, level + 1);
-		buf.append(" sess]");
+		this.indent_level++;
+		buildTypes(succ, buf, toplevel);
+		this.indent_level--;
+		buf.append(" sess]]");
 	}
 	
-	protected void unaryInput(EState curr, StringBuffer buf, List<EState> toplevel, int level) throws ScribbleException {
+	protected void unaryInput(EState curr, StringBuffer buf, List<EState> toplevel) {
 		EAction action = getSingleAction(curr);
 		List<PayloadElemType<?>> payloads = action.payload.elems;
-		buf.append("[`recv of ([`" + action.peer + "], 'c_" + action.peer + ") role * "
+		buf.append("[`recv of [`" + action.peer + " of 'c_" + action.peer + " * "
 				+"[`" + Util.label(action.mid)
 				+ " of " + payloadTypesToString(payloads) 
 				+ " *\n");
 		
 		EState succ = curr.getSuccessor(action);
-		buildTypes(succ, buf, toplevel, level + 1);
-		buf.append(" sess]]");
+		this.indent_level++;
+		buildTypes(succ, buf, toplevel);
+		this.indent_level--;
+		buf.append(" sess]]]");
 	}
 	
 	protected Role getPeer(EState curr) {
@@ -284,7 +337,7 @@ public class OCamlTypeBuilder {
 		return r;
 	}
 	
-	protected void polyInput(EState curr, StringBuffer buf, List<EState> toplevel, int level, boolean accept) throws ScribbleException {
+	protected void polyInput(EState curr, StringBuffer buf, List<EState> toplevel, boolean accept) {
 		String prefix;
 		if(accept) {
 			prefix = "[`accept of ";
@@ -294,28 +347,30 @@ public class OCamlTypeBuilder {
 		buf.append(prefix);
 		
 		Role peer = getPeer(curr);
-		buf.append("([`" + peer + "], 'c_" + peer + ") role *\n");
+		buf.append("[`" + peer + " of 'c_" + peer + " *");
+			
+		boolean[] label_middle = {false};
 		
-		level++;
-		indent(buf, level);
-		buf.append("[");
-		
-		boolean mid = false;
-		for (EAction action : curr.getActions()) {
+		iterate(buf, curr.getActions(), (EAction action) -> {
 			List<PayloadElemType<?>> payloads = action.payload.elems;
-			if(mid) {
-				buf.append("\n");
-				indent(buf, level);
+
+			if (label_middle[0]) {
 				buf.append("|");
+			} else { 
+				buf.append("[");
+				label_middle[0] = true;
 			}
-			mid = true;
+			
 			buf.append("`" + Util.label(action.mid) + " of " + payloadTypesToString(payloads) + " *\n");
 			EState succ = curr.getSuccessor(action);
-			buildTypes(succ, buf, toplevel, level + 1);
+			this.indent_level++;
+			buildTypes(succ, buf, toplevel);
+			this.indent_level--;
 			buf.append(" sess");
-		}
-		buf.append("]]");
-		level--;
+		});
+		
+		buf.append("]]]");
+		
 	}
 
 	// XXX copied from STStateChanAPIBuilder
