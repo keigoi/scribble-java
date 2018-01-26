@@ -5,21 +5,22 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import org.scribble.ast.DataTypeDecl;
 import org.scribble.ast.Module;
 import org.scribble.ast.global.GProtocolDecl;
 import org.scribble.main.Job;
 import org.scribble.main.ScribbleException;
-import org.scribble.model.MState;
 import org.scribble.model.endpoint.EState;
 import org.scribble.model.endpoint.actions.EAction;
-import org.scribble.model.global.SGraph;
 import org.scribble.model.global.SState;
 import org.scribble.model.global.actions.SAction;
+import org.scribble.type.name.DataType;
 import org.scribble.type.name.GProtocolName;
 import org.scribble.type.name.PayloadElemType;
 import org.scribble.type.name.Role;
@@ -41,25 +42,40 @@ public class OCamlAPIBuilder {
 		}
 	} 
 	
+	private static final String EXT_SOURCE_FUNCTOR = "_functor";
+	
 	public static final String preamble = 
 		  "(* Generated from scribble-ocaml https://github.com/keigoi/scribble-ocaml\n"
 		+ " * This code should be compiled with scribble-ocaml-runtime\n"
-		+ " * https://github.com/keigoi/scribble-ocaml-runtime *)\n"
-		+ "open Scribble.Direct (* or: open Scribble_lwt *)";
+		+ " * https://github.com/keigoi/scribble-ocaml-runtime *)";
 		
 	
 	/**
 	 * @return Generated OCaml program
 	 */
 	public String generateAPI() throws ScribbleException {
-		// abstract local type
-		String globaltype = "type " + Util.uncapitalise(fullname.getSimpleName().toString()) + "\n";
 		
-		String localtypes = generateTypes();
+		List<DataTypeDecl> decls = dataTypeDecls(Optional.empty());
+		boolean hasFunctorParam = 
+				decls.stream()
+				.filter(d -> d.extSource.equals(EXT_SOURCE_FUNCTOR))
+				.findAny().isPresent();
+
+		String typeparam = 
+				hasFunctorParam 
+				? externalTypesFormat.replace("%EXTERNAL_TYPE_CONTENT", generateFunctorSigBody(Optional.empty())) + "\n" 
+				: "";
+				
+		String body = 
+				wrappingFunctorFormat
+				.replace("%TYPEARG", 
+						hasFunctorParam ? "(Types:TYPES)" : "")
+				.replace("%PAYLOAD_TYPE_CONTENT", 
+						generateExternalTypeDefs(Optional.empty()))
+				.replace("%MODULE_CONTENT", 
+						generateTypes() + "\n" + generateRoles());
 		
-		String roles = generateRoles();
-		
-		return preamble + "\n" + globaltype + "\n" + localtypes + "\n" + roles;
+		return preamble + "\n\n" + typeparam + "\n" + body;
 	}
 
 	public String generateTypes() throws ScribbleException {
@@ -75,22 +91,34 @@ public class OCamlAPIBuilder {
 		return buf.toString();
 	}
 	
+	public static final String externalTypesFormat =
+			  "module type TYPES = sig\n"
+			+ "%EXTERNAL_TYPE_CONTENT"
+			+ "end";
+	
+	public static final String wrappingFunctorFormat =
+			  "module Make (Session:Scribble.Base.SESSION) %TYPEARG = struct\n"
+			+ "%PAYLOAD_TYPE_CONTENT\n"
+			+ "open Session\n\n"
+			+ "%MODULE_CONTENT\n"
+			+ "end";
+	
 	public static final String selfRoleFormat =
 			  "module %ROLE = struct\n"
 			+ "  let initiate_%ROLE : unit -> ('c, 'c, %CONN_PARAMS %PROTOCOL_%ROLE sess) monad =\n"
 		    + "    fun () -> Internal.__initiate ~myname:\"role_%ROLE\"\n\n"
-		    + "%MODULE_CONTENT"
+		    + "%MODULE_CONTENT\n"
             + "end";
 	
 	public static final String peerRoleFormat = 
 			  "  module %ROLE = struct\n"
-			+ "    module Make(P:sig\n"
+			+ "    module Make(X:sig\n"
 			+ "        type conn\n"
 			+ "        val conn : conn Endpoint.conn_kind\n"
 			+ "%LABEL_MODULE_ARGS"
 			+ "      end) = struct\n"
-			+ "      module P = P\n"
-			+ "      let role : ([>`%ROLE of P.conn * 'lab], P.conn, 'lab) role = {_pack_role=(fun labels -> `%ROLE(labels)) ; _repr=\"role_%ROLE\"; _kind=P.conn}\n\n"
+			+ "      let role : ([>`%ROLE of X.conn * 'lab], X.conn, 'lab) role =\n"
+			+ "        {_pack_role=(fun labels -> `%ROLE(labels)) ; _repr=\"role_%ROLE\"; _kind=X.conn}\n\n"
 			+ "%LABEL_MODULE_CONTENT"
 			+ "    end\n\n"
 		    + "    module Shmem = struct\n"
@@ -109,18 +137,20 @@ public class OCamlAPIBuilder {
 			  "        val read_%FUNNAME : conn -> %LABELS io";
 
 	public static final String sendLabelFormat =
-			  "      let %LABEL : 'p. ([>`%LABEL of %PAYLOAD * 'p sess], P.conn, %PAYLOAD * 'p sess) label = {_pack_label=(fun payload -> `%LABEL(payload)); _send=P.write_%FUNNAME}";
+			    "      let %LABEL : 'p. ([>`%LABEL of %PAYLOAD * 'p sess], X.conn, %PAYLOAD * 'p sess) label =\n"
+			  + "        {_pack_label=(fun payload -> `%LABEL(payload)); _send=X.write_%FUNNAME}";
 	
 	public static final String recvLabelFormat =
-			  "      let receive_%FUNNAME  : type %TYVARS. (%LABELS, P.conn) labels = {_receive=P.read_%FUNNAME}";
+			    "      let receive_%FUNNAME  : type %TYVARS. (%LABELS, X.conn) labels =\n"
+			  + "        {_receive=X.read_%FUNNAME}";
 			
 	public static final String writerImplFormat = 
-			  "      let write_%FUNNAME (conn:P.conn) : [>`%LABEL of %PAYLOAD * 'p sess] -> unit io = function\n"
+			  "      let write_%FUNNAME (conn:X.conn) : [>`%LABEL of %PAYLOAD * 'p sess] -> unit io = function\n"
 			+ "        | `%LABEL(Data payload, _) -> failwith \"not implemented\" (* CHANGE HERE *)\n"
 			+ "        | _ -> failwith \"impossible: write_%FUNNAME\"";
 	
 	public static final String readerImplFormat = 
-			  "      let read_%FUNNAME (conn:P.conn) : type %TYVARS. %LABELS io =\n"
+			  "      let read_%FUNNAME (conn:X.conn) : type %TYVARS. %LABELS io =\n"
 			+ "        failwith \"not implemented\" (* CHANGE HERE *)";
 	
 	public static final String shmemWriterImplFormat = 
@@ -128,6 +158,9 @@ public class OCamlAPIBuilder {
 	
 	public static final String shmemReaderImplFormat = 
 			  "          let read_%FUNNAME = Raw.receive";
+	
+	public static final String typParamFormat = "  type %OCAMLTYP";
+	public static final String typDefFormat   = "  type %OCAMLTYP = %REALTYP";
 	
 	protected String generateRoles() throws ScribbleException {
 		List<Role> roles = this.protocol.header.roledecls.getRoles();
@@ -172,9 +205,9 @@ public class OCamlAPIBuilder {
 			int count = labelDupCheck.getOrDefault(label.label, 0);
 			labelDupCheck.put(label.label, count+1);
 			String funname = label.label + (count == 0 ? "" : "_" + count); 
-			moduleArgBuffer.append(writerSigFormat.replace("%FUNNAME", funname).replace("%LABEL", Util.label(label.label)).replace("%PAYLOAD", label.payloadTypeRepr));
+			moduleArgBuffer.append(writerSigFormat.replace("%FUNNAME", funname).replace("%LABEL", Util.label(label.label)).replace("%PAYLOAD", label.getPayloadTypeRepr()));
 			moduleArgBuffer.append('\n');
-			moduleContentBuffer.append(sendLabelFormat.replace("%FUNNAME", funname).replace("%LABEL", Util.label(label.label)).replace("%PAYLOAD", label.payloadTypeRepr));
+			moduleContentBuffer.append(sendLabelFormat.replace("%FUNNAME", funname).replace("%LABEL", Util.label(label.label)).replace("%PAYLOAD", label.getPayloadTypeRepr()));
 			moduleContentBuffer.append('\n');
 			shmemModuleContentBuffer.append(shmemWriterImplFormat.replace("%FUNNAME", funname));
 			shmemModuleContentBuffer.append('\n');
@@ -219,7 +252,7 @@ public class OCamlAPIBuilder {
 		int count = 0;
 		StringBuffer buf = new StringBuffer();
 		for(LabelAndPayload label : branch) {
-			buf.append("`" + Util.label(label.label) + " of " + label.payloadTypeRepr + " * " + (abstract_tyvar ? "" : "'") + "p" + count);
+			buf.append("`" + Util.label(label.label) + " of " + label.getPayloadTypeRepr() + " * " + (abstract_tyvar ? "" : "'") + "p" + count);
 			if (count<branch.size()-1) {
 				buf.append("|");
 			}
@@ -259,45 +292,96 @@ public class OCamlAPIBuilder {
 		return initiator;
 	}
 	
-	public boolean hasConnect() throws ScribbleException {
+	protected String generateFunctorSigBody(Optional<Role> me) {
+		List<DataTypeDecl> decls = dataTypeDecls(me);
 		
-		SGraph global = job.getContext().getSGraph(this.fullname);
-		Set<SAction> actions = MState.getReachableActions(global.init);
+		return decls.stream()
+				.filter(d -> d.extSource.equals(EXT_SOURCE_FUNCTOR))
+				.map(typ -> typParamFormat
+						.replace("%OCAMLTYP", OCamlTypeBuilder.payloadTypeToString(typ))
+						)
+				.collect(Collectors.joining("\n"))+"\n";
+	}
+	
+	protected String generateExternalTypeDefs(Optional<Role> me) {
+		List<DataTypeDecl> decls = dataTypeDecls(me);
 		
-		for(SAction action : actions) {
-			if(action.isConnect()) return true;
+		return decls.stream()
+				.map(typ -> typDefFormat
+						.replace("%OCAMLTYP", OCamlTypeBuilder.payloadTypeToString(typ))
+						.replace("%REALTYP",  
+								typ.extSource.equals(EXT_SOURCE_FUNCTOR) 
+								? "Types." + OCamlTypeBuilder.payloadTypeToString(typ) 
+								: typ.extName)
+						)
+				.collect(Collectors.joining("\n"))+"\n";
+	}
+	
+	protected List<DataTypeDecl> dataTypeDecls(Optional<Role> me) {
+		Module main = this.job.getContext().getMainModule();
+		
+		Set<PayloadElemType<?>> payloads;
+		if (me.isPresent()) {
+			payloads = payloads(inits.get(me.get()));
+		} else {
+			payloads = this.protocol.header.roledecls.getRoles().stream()
+					.flatMap(r -> payloads(inits.get(r)).stream())
+					.distinct()
+					.collect(Collectors.toSet());
 		}
 		
-		return false;
+		Set<DataTypeDecl> occurring = 
+				payloads.stream()
+				.filter(typ -> typ.isDataType())
+				.map(typ -> main.getDataTypeDecl((DataType)typ))
+				.collect(Collectors.toSet());
+				
+		return main.getNonProtocolDecls().stream()
+				.filter(d -> occurring.contains(d))
+				.map(d -> (DataTypeDecl)d)
+				.collect(Collectors.toList());
+	}
+	
+	protected Set<PayloadElemType<?>> payloads(EState state) {
+		return labels(a -> true, state)
+				.stream()
+				.flatMap(l -> l.payloads.stream())
+				.collect(Collectors.toSet());
 	}
 	
 	protected static final class LabelAndPayload {
 		public final String label;
-		public final String payloadTypeRepr;
+		public final List<PayloadElemType<?>> payloads;
 		public LabelAndPayload(String label, List<PayloadElemType<?>> payloads) {
 			this.label = label;
-			this.payloadTypeRepr = OCamlTypeBuilder.payloadTypesToString(payloads); 
+			this.payloads = payloads;
 		}
 		@Override
 		public int hashCode() {
-			return Objects.hash(label, payloadTypeRepr);
+			return Objects.hash(label, getPayloadTypeRepr());
 		}
 		@Override
 		public boolean equals(Object obj) {
 			if (obj == null) return false;
 			if (getClass() != obj.getClass()) return false;
 			LabelAndPayload other = (LabelAndPayload) obj;
-			return Objects.equals(this.label, other.label) && Objects.equals(this.payloadTypeRepr, other.payloadTypeRepr);
+			return Objects.equals(this.label, other.label) && Objects.equals(this.getPayloadTypeRepr(), other.getPayloadTypeRepr());
 		}
 		@Override
 		public String toString() {
-			return label+"<" + payloadTypeRepr + ">";
+			return label+"<" + getPayloadTypeRepr() + ">";
+		}
+		public String getPayloadTypeRepr() {
+			return OCamlTypeBuilder.payloadTypesToString(payloads);
 		}
 	}
 	
-	
 	protected List<LabelAndPayload> sendLabels(Role peer, EState state) {
 		return labels(state, a -> a.peer.equals(peer) && (a.isSend() || a.isRequest()), new ArrayList<>());
+	}
+	
+	protected List<LabelAndPayload> labels(Predicate<EAction> predicate, EState state) {
+		return labels(state, predicate, new ArrayList<>());
 	}
 	
 	protected List<LabelAndPayload> labels(EState state, Predicate<EAction> predicate, List<EState> visited) {

@@ -10,6 +10,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.scribble.ast.DataTypeDecl;
 import org.scribble.ast.Module;
 import org.scribble.main.Job;
 import org.scribble.main.ScribbleException;
@@ -125,6 +126,14 @@ public class OCamlTypeBuilder {
 			f.accept(list.get(0));
 		}
 	}
+	
+	public static String payloadTypeToString(DataTypeDecl typ) {
+		return Util.uncapitalise(typ.name.toString());
+	}
+	
+	public static String payloadTypeToString(PayloadElemType<?> typ) {
+		return Util.uncapitalise(typ.toString());
+	}
 
 	public static String payloadTypesToString(List<PayloadElemType<?>> payloads) {
 		if(payloads.isEmpty()) {
@@ -140,8 +149,7 @@ public class OCamlTypeBuilder {
 			return Util.uncapitalise(payloads.get(0).toString()) + " data";
 		} else {
 			return "(" + payloads.stream()
-					.map(PayloadElemType::toString)
-					.map(Util::uncapitalise) // ad hoc renaming -- String -> string for example
+					.map(OCamlTypeBuilder::payloadTypeToString)
 					.collect(Collectors.joining(" * ")) + ") data";
 		}
 	}
@@ -300,7 +308,7 @@ public class OCamlTypeBuilder {
 		// labels and paylaods are ignored
 		EAction action = getSingleAction(curr);
 
-		String prefix = "[`disconnect of [`" + action.peer + " of 'c_" + action.peer + " * \n";
+		String prefix = "[`disconnect of [`" + action.peer + " of 'c_" + action.peer + " *\n";
 		buf.append(prefix);
 				
 		EState succ = curr.getSuccessor(action);
