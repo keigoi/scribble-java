@@ -2,12 +2,9 @@ package org.scribble.ext.ocaml.codegen;
 
 import static java.util.Comparator.comparing;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.scribble.ast.DataTypeDecl;
@@ -30,7 +27,7 @@ public class OCamlTypeBuilder {
 	public final GProtocolName gpn;
 	public final Role role;
 	
-	private int indent_level;
+	protected Indent indent = new Indent();
 	
 	protected Map<Integer, String> names = new HashMap<>();
 	protected int nameCounter = 1;
@@ -59,13 +56,13 @@ public class OCamlTypeBuilder {
 		buf.append("type " + roleConnTypeParams + " ");
 		
 		// local types
-		List<EState> toplevels = getRecurringStates(start);		
+		List<EState> toplevels = Util.getRecurringStates(start);		
 		buf.append(Util.uncapitalise(gpn.getSimpleName().toString()) + "_" + this.role 
 				+ " = " + roleConnTypeParams + " " + getStateChanName(start) + "\n");
 		
 		for(EState me : toplevels) {
 			buf.append("and " + roleConnTypeParams + " " + getStateChanName(me) + " =\n");
-			this.indent_level = 0;
+			this.indent.reset();
 			buildTypes(me, buf, toplevels);
 			buf.append("\n");
 		}
@@ -76,57 +73,7 @@ public class OCamlTypeBuilder {
 		List<Role> roles = module.getProtocolDecl(this.gpn.getSimpleName()).getHeader().roledecls.getRoles();
 		return Util.getRoleConnTypeParams(roles, this.role);
 	}
-	
-	// traverse the graph to gather recurring states which will be declared at the top level
-	public static List<EState> getRecurringStates(EState start) {
-		ArrayList<EState> recurring = new ArrayList<>(), visited = new ArrayList<>();
-		recurring.add(start);
-		getRecurringStates(start, recurring, visited);
-		return recurring;
-	}
-	
-	protected static void getRecurringStates(EState curr, List<EState> recurring, List<EState> visited) {
-		// if visited twice, add that state to the toplevels
-		if(visited.contains(curr) && !curr.isTerminal()) {
-			if( !recurring.contains(curr) ) recurring.add(curr);
-		} else {
-			visited.add(curr);
-			for(EAction action : curr.getActions()) {
-				getRecurringStates(curr.getSuccessor(action), recurring, visited);				
-			}
-		}
-	}
-	
-	protected static EAction getSingleAction(EState s) {
-		List<EAction> actions = s.getActions();
-		assert (actions.size() == 1);
-		return actions.get(0);
-	}
-
-	// indent == -1 is the rightmost 
-	protected void indent_(StringBuffer buf) {
-		for (int i = 0; i < (indent_level + 1) * 2; i++) {
-			buf.append(' ');
-		}
-	}
-	
-	protected <T> void iterate(StringBuffer buf, List<T> list, Consumer<T> f) {
-		if (list.size() > 1) {
-			this.indent_level++;
-			for(T v : list) {
-				buf.append("\n");
-				for (int i = 0; i < (indent_level + 1) * 2; i++) {
-					buf.append(' ');
-				}
-				f.accept(v);
-			}
-			this.indent_level--;
-		} else {
-			buf.append(" ");
-			f.accept(list.get(0));
-		}
-	}
-	
+		
 	public static String payloadTypeToString(DataTypeDecl typ) {
 		return Util.uncapitalise(typ.name.toString());
 	}
@@ -152,22 +99,6 @@ public class OCamlTypeBuilder {
 					.map(OCamlTypeBuilder::payloadTypeToString)
 					.collect(Collectors.joining(" * ")) + ") data";
 		}
-	}
-
-	protected static boolean checkAllActions(List<EAction> actions, Predicate<EAction> pred) {
-		Boolean found = null;
-		for(EAction action : actions) {
-			boolean test = pred.test(action);
-			if(found != null && found.booleanValue() != test) {
-				throw new RuntimeException("[OCaml] non-uniform EAction found");
-			}
-			if(test) {
-				found = true;
-			} else {
-				found = false;
-			}
-		}
-		return found;
 	}
 
 	protected static boolean checkPayloadIsDelegation(List<PayloadElemType<?>> payloads) {
@@ -202,9 +133,9 @@ public class OCamlTypeBuilder {
 
 	protected void buildTypes(EState curr, StringBuffer buf, List<EState> toplevel) {
 
-		indent_(buf);
+		this.indent(buf);
 
-		if (this.indent_level != 0 && toplevel.contains(curr)) {
+		if (this.indent.curr() != 0 && toplevel.contains(curr)) {
 			buf.append(getRoleConnTypeParams() + " ");
 			buf.append(getStateChanName(curr));
 			return;
@@ -212,7 +143,7 @@ public class OCamlTypeBuilder {
 
 		switch (curr.getStateKind()) {
 		case OUTPUT:
-			boolean isDisconnect = checkAllActions(curr.getActions(), (EAction a) -> a.isDisconnect());
+			boolean isDisconnect = curr.getActions().stream().anyMatch(a -> a.isDisconnect());
 			if (isDisconnect) {
 				disconnect(curr, buf, toplevel);
 			} else {				
@@ -249,7 +180,7 @@ public class OCamlTypeBuilder {
 				
 		boolean[] role_middle = {false};
 		
-		iterate(buf, getRoles(curr), (Role role) -> {
+		this.indent.iterate(buf, getRoles(curr), (Role role) -> {
 			
 			if (role_middle[0]) {
 				buf.append("|");
@@ -262,7 +193,7 @@ public class OCamlTypeBuilder {
 			
 			boolean[] label_middle = {false};
 
-			iterate(buf, getActions(curr, role), (EAction action) -> {
+			this.indent.iterate(buf, getActions(curr, role), (EAction action) -> {
 				
 				if (label_middle[0]) {
 					buf.append("|");
@@ -277,9 +208,9 @@ public class OCamlTypeBuilder {
 						+ " of " + payloadTypesToString(payloads) + " *\n");
 
 				EState succ = curr.getSuccessor(action);
-				this.indent_level++;
+				this.indent.incr();;
 				buildTypes(succ, buf, toplevel);
-				this.indent_level--;
+				this.indent.decr();;
 
 				buf.append(" sess");
 			});
@@ -306,20 +237,20 @@ public class OCamlTypeBuilder {
 	
 	protected void disconnect(EState curr, StringBuffer buf, List<EState> toplevel) {
 		// labels and paylaods are ignored
-		EAction action = getSingleAction(curr);
+		EAction action = Util.getSingleAction(curr);
 
 		String prefix = "[`disconnect of [`" + action.peer + " of 'c_" + action.peer + " *\n";
 		buf.append(prefix);
 				
 		EState succ = curr.getSuccessor(action);
-		this.indent_level++;
+		this.indent.incr();;
 		buildTypes(succ, buf, toplevel);
-		this.indent_level--;
+		this.indent.decr();;
 		buf.append(" sess]]");
 	}
 	
 	protected void unaryInput(EState curr, StringBuffer buf, List<EState> toplevel) {
-		EAction action = getSingleAction(curr);
+		EAction action = Util.getSingleAction(curr);
 		List<PayloadElemType<?>> payloads = action.payload.elems;
 		buf.append("[`recv of [`" + action.peer + " of 'c_" + action.peer + " * "
 				+"[`" + Util.label(action.mid)
@@ -327,9 +258,9 @@ public class OCamlTypeBuilder {
 				+ " *\n");
 		
 		EState succ = curr.getSuccessor(action);
-		this.indent_level++;
+		this.indent.incr();
 		buildTypes(succ, buf, toplevel);
-		this.indent_level--;
+		this.indent.decr();
 		buf.append(" sess]]]");
 	}
 	
@@ -359,7 +290,7 @@ public class OCamlTypeBuilder {
 			
 		boolean[] label_middle = {false};
 		
-		iterate(buf, curr.getActions(), (EAction action) -> {
+		this.indent.iterate(buf, curr.getActions(), (EAction action) -> {
 			List<PayloadElemType<?>> payloads = action.payload.elems;
 
 			if (label_middle[0]) {
@@ -371,9 +302,9 @@ public class OCamlTypeBuilder {
 			
 			buf.append("`" + Util.label(action.mid) + " of " + payloadTypesToString(payloads) + " *\n");
 			EState succ = curr.getSuccessor(action);
-			this.indent_level++;
+			this.indent.incr();;
 			buildTypes(succ, buf, toplevel);
-			this.indent_level--;
+			this.indent.decr();
 			buf.append(" sess");
 		});
 		
@@ -394,6 +325,10 @@ public class OCamlTypeBuilder {
 	protected String makeSTStateName(EState s) {
 		String name = this.gpn.getSimpleName() + "_" + role + "_" + this.nameCounter++;
 		return Util.uncapitalise(name);
+	}
+	
+	protected void indent(StringBuffer buf) {
+		this.indent.indent(buf);
 	}
 
 }

@@ -4,10 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -17,10 +14,8 @@ import org.scribble.ast.global.GProtocolDecl;
 import org.scribble.main.Job;
 import org.scribble.main.ScribbleException;
 import org.scribble.model.endpoint.EState;
-import org.scribble.model.endpoint.actions.EAction;
 import org.scribble.model.global.SState;
 import org.scribble.model.global.actions.SAction;
-import org.scribble.type.name.DataType;
 import org.scribble.type.name.GProtocolName;
 import org.scribble.type.name.PayloadElemType;
 import org.scribble.type.name.Role;
@@ -29,6 +24,7 @@ public class OCamlAPIBuilder {
 	public final Job job;
 	public final GProtocolName fullname;
 	public final GProtocolDecl protocol;
+	public final List<Role> roles;
 	public final HashMap<Role, EState> inits;
 
 	public OCamlAPIBuilder(Job job, GProtocolName fullname) throws ScribbleException {
@@ -36,13 +32,12 @@ public class OCamlAPIBuilder {
 		this.fullname = fullname;
 		this.protocol = (GProtocolDecl)this.job.getContext().getMainModule().getProtocolDecl(fullname.getSimpleName());
 		this.inits = new HashMap<>();
+		this.roles = this.protocol.header.roledecls.getRoles();
 		
-		for (Role role : this.protocol.header.roledecls.getRoles()) {
+		for (Role role : roles) {
 			inits.put(role, job.getContext().getEGraph(this.fullname, role).init);
 		}
 	} 
-	
-	private static final String EXT_SOURCE_FUNCTOR = "_functor";
 	
 	public static final String preamble = 
 		  "(* Generated from scribble-ocaml https://github.com/keigoi/scribble-ocaml\n"
@@ -54,16 +49,13 @@ public class OCamlAPIBuilder {
 	 * @return Generated OCaml program
 	 */
 	public String generateAPI() throws ScribbleException {
+		Module main = this.job.getContext().getMainModule();
 		
-		List<DataTypeDecl> decls = dataTypeDecls(Optional.empty());
-		boolean hasFunctorParam = 
-				decls.stream()
-				.filter(d -> d.extSource.equals(EXT_SOURCE_FUNCTOR))
-				.findAny().isPresent();
+		boolean hasFunctorParam = !Util.functorParamDataTypeDecls(main).isEmpty();
 
 		String typeparam = 
 				hasFunctorParam 
-				? externalTypesFormat.replace("%EXTERNAL_TYPE_CONTENT", generateFunctorSigBody(Optional.empty())) + "\n" 
+				? externalTypesFormat.replace("%EXTERNAL_TYPE_CONTENT", generateFunctorSigBody(main)) + "\n" 
 				: "";
 				
 		String body = 
@@ -71,7 +63,7 @@ public class OCamlAPIBuilder {
 				.replace("%TYPEARG", 
 						hasFunctorParam ? "(Types:TYPES)" : "")
 				.replace("%PAYLOAD_TYPE_CONTENT", 
-						generateExternalTypeDefs(Optional.empty()))
+						generateExternalTypeDefs(main))
 				.replace("%MODULE_CONTENT", 
 						generateTypes() + "\n" + generateRoles());
 		
@@ -82,9 +74,8 @@ public class OCamlAPIBuilder {
 		
 		StringBuffer buf = new StringBuffer();
 		Module module = this.job.getContext().getMainModule();
-		List<Role> roles = module.getProtocolDecl(this.fullname.getSimpleName()).getHeader().roledecls.getRoles();
 		
-		for(Role role : roles) {
+		for(Role role : this.roles) {
 			OCamlTypeBuilder apigen = new OCamlTypeBuilder(this.job, module, this.fullname, role);
 			buf.append(apigen.build());
 		}
@@ -127,6 +118,7 @@ public class OCamlAPIBuilder {
 			+ "          let conn = Shmem\n"
 			+ "%SHMEM_LABEL_MODULE_CONTENT"
 			+ "        end)\n"
+			+ "        let connector, acceptor = shmem ()\n"
 			+ "    end\n"
 			+ "  end";
 	
@@ -143,16 +135,7 @@ public class OCamlAPIBuilder {
 	public static final String recvLabelFormat =
 			    "      let receive_%FUNNAME  : type %TYVARS. (%LABELS, X.conn) labels =\n"
 			  + "        {_receive=X.read_%FUNNAME}";
-			
-	public static final String writerImplFormat = 
-			  "      let write_%FUNNAME (conn:X.conn) : [>`%LABEL of %PAYLOAD * 'p sess] -> unit io = function\n"
-			+ "        | `%LABEL(Data payload, _) -> failwith \"not implemented\" (* CHANGE HERE *)\n"
-			+ "        | _ -> failwith \"impossible: write_%FUNNAME\"";
-	
-	public static final String readerImplFormat = 
-			  "      let read_%FUNNAME (conn:X.conn) : type %TYVARS. %LABELS io =\n"
-			+ "        failwith \"not implemented\" (* CHANGE HERE *)";
-	
+
 	public static final String shmemWriterImplFormat = 
 			  "          let write_%FUNNAME = Raw.send";
 	
@@ -292,128 +275,39 @@ public class OCamlAPIBuilder {
 		return initiator;
 	}
 	
-	protected String generateFunctorSigBody(Optional<Role> me) {
-		List<DataTypeDecl> decls = dataTypeDecls(me);
+	protected String generateFunctorSigBody(Module main) {
+		List<DataTypeDecl> decls = Util.functorParamDataTypeDecls(main);
 		
 		return decls.stream()
-				.filter(d -> d.extSource.equals(EXT_SOURCE_FUNCTOR))
 				.map(typ -> typParamFormat
 						.replace("%OCAMLTYP", OCamlTypeBuilder.payloadTypeToString(typ))
 						)
 				.collect(Collectors.joining("\n"))+"\n";
 	}
 	
-	protected String generateExternalTypeDefs(Optional<Role> me) {
-		List<DataTypeDecl> decls = dataTypeDecls(me);
+	protected String generateExternalTypeDefs(Module main) {
+		List<DataTypeDecl> decls = Util.dataTypeDecls(main);
 		
 		return decls.stream()
 				.map(typ -> typDefFormat
 						.replace("%OCAMLTYP", OCamlTypeBuilder.payloadTypeToString(typ))
 						.replace("%REALTYP",  
-								typ.extSource.equals(EXT_SOURCE_FUNCTOR) 
+								typ.extSource.equals(Util.EXT_SOURCE_FUNCTOR) 
 								? "Types." + OCamlTypeBuilder.payloadTypeToString(typ) 
 								: typ.extName)
 						)
 				.collect(Collectors.joining("\n"))+"\n";
 	}
 	
-	protected List<DataTypeDecl> dataTypeDecls(Optional<Role> me) {
-		Module main = this.job.getContext().getMainModule();
-		
-		Set<PayloadElemType<?>> payloads;
-		if (me.isPresent()) {
-			payloads = payloads(inits.get(me.get()));
-		} else {
-			payloads = this.protocol.header.roledecls.getRoles().stream()
-					.flatMap(r -> payloads(inits.get(r)).stream())
-					.distinct()
-					.collect(Collectors.toSet());
-		}
-		
-		Set<DataTypeDecl> occurring = 
-				payloads.stream()
-				.filter(typ -> typ.isDataType())
-				.map(typ -> main.getDataTypeDecl((DataType)typ))
-				.collect(Collectors.toSet());
-				
-		return main.getNonProtocolDecls().stream()
-				.filter(d -> occurring.contains(d))
-				.map(d -> (DataTypeDecl)d)
-				.collect(Collectors.toList());
-	}
-	
 	protected Set<PayloadElemType<?>> payloads(EState state) {
-		return labels(a -> true, state)
+		return Util.labels(state, a -> true)
 				.stream()
 				.flatMap(l -> l.payloads.stream())
 				.collect(Collectors.toSet());
 	}
 	
-	protected static final class LabelAndPayload {
-		public final String label;
-		public final List<PayloadElemType<?>> payloads;
-		public LabelAndPayload(String label, List<PayloadElemType<?>> payloads) {
-			this.label = label;
-			this.payloads = payloads;
-		}
-		@Override
-		public int hashCode() {
-			return Objects.hash(label, getPayloadTypeRepr());
-		}
-		@Override
-		public boolean equals(Object obj) {
-			if (obj == null) return false;
-			if (getClass() != obj.getClass()) return false;
-			LabelAndPayload other = (LabelAndPayload) obj;
-			return Objects.equals(this.label, other.label) && Objects.equals(this.getPayloadTypeRepr(), other.getPayloadTypeRepr());
-		}
-		@Override
-		public String toString() {
-			return label+"<" + getPayloadTypeRepr() + ">";
-		}
-		public String getPayloadTypeRepr() {
-			return OCamlTypeBuilder.payloadTypesToString(payloads);
-		}
-	}
-	
 	protected List<LabelAndPayload> sendLabels(Role peer, EState state) {
-		return labels(state, a -> a.peer.equals(peer) && (a.isSend() || a.isRequest()), new ArrayList<>());
-	}
-	
-	protected List<LabelAndPayload> labels(Predicate<EAction> predicate, EState state) {
-		return labels(state, predicate, new ArrayList<>());
-	}
-	
-	protected List<LabelAndPayload> labels(EState state, Predicate<EAction> predicate, List<EState> visited) {
-		if(visited.contains(state)) {
-			return new ArrayList<>();
-		}
-		
-		visited.add(state);
-		
-		List<LabelAndPayload> labelsWithDup = 
-				state.getActions().stream()
-				.filter(predicate)
-				.map(a -> new LabelAndPayload(a.mid.toString(), a.payload.elems))
-				.collect(Collectors.toList());
-		
-		HashSet<LabelAndPayload> dupcheck = new HashSet<>();
-		
-		ArrayList<LabelAndPayload> ret = new ArrayList<>();
-		for(LabelAndPayload label : labelsWithDup) {
-			if (dupcheck.contains(label)) continue;
-			ret.add(label);
-			dupcheck.add(label);
-		}
-		
-		for(EState succ : state.getSuccessors()) {
-			for(LabelAndPayload label : labels(succ, predicate, visited)) {
-				if (dupcheck.contains(label)) continue;
-				ret.add(label);
-				dupcheck.add(label);
-			}
-		}
-		return ret;
+		return Util.labels(state, a -> a.peer.equals(peer) && (a.isSend() || a.isRequest()));
 	}
 	
 	

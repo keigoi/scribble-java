@@ -16,16 +16,19 @@ package org.scribble.ext.ocaml.cli;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.scribble.ast.global.GProtocolDecl;
 import org.scribble.cli.CLArgFlag;
 import org.scribble.cli.CommandLine;
 import org.scribble.cli.CommandLineException;
 import org.scribble.ext.ocaml.codegen.OCamlAPIBuilder;
+import org.scribble.ext.ocaml.codegen.OCamlTemplateBuilder;
 import org.scribble.ext.ocaml.codegen.Util;
 import org.scribble.main.AntlrSourceException;
 import org.scribble.main.Job;
 import org.scribble.main.JobContext;
 import org.scribble.main.ScribbleException;
 import org.scribble.type.name.GProtocolName;
+import org.scribble.type.name.Role;
 
 public class OCamlCommandLine extends CommandLine
 {
@@ -56,6 +59,13 @@ public class OCamlCommandLine extends CommandLine
 				
 				Map<String, String> map = new HashMap<>(); 				
 				map.put(Util.uncapitalise(fullname.getSimpleName().toString()) + ".ml", program);
+				
+				GProtocolDecl decl = (GProtocolDecl)job.getContext().getMainModule().getProtocolDecl(fullname.getSimpleName());
+				for(Role role : decl.header.roledecls.getRoles()) {
+					String filename = Util.uncapitalise(fullname.getSimpleName().toString()) + "_" + role + "-template.ml";
+					map.put(filename, new OCamlTemplateBuilder(job, fullname).generateTemplates(role));
+				}
+				
 				outputClasses(map);
 			}
 		}
