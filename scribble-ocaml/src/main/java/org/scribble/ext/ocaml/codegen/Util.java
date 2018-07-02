@@ -101,4 +101,17 @@ public class Util {
 		return multiple ? "(" + buf.toString() + ")" : buf.toString();
 	}
 
+	protected static String generatePolyvarBranch(List<LabelAndPayload> branch, boolean abstract_tyvar) {
+		int count = 0;
+		StringBuffer buf = new StringBuffer();
+		for(LabelAndPayload label : branch) {
+			buf.append("`" + Util.label(label.label) + " of " + label.getPayloadTypeRepr() + " * " + (abstract_tyvar ? "" : "'") + "p" + count);
+			if (count<branch.size()-1) {
+				buf.append("|");
+			}
+			count++;
+		}
+		return "[" + buf.toString() + "]";
+	}
+
 }
