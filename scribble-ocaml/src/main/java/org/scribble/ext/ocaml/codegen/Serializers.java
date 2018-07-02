@@ -78,7 +78,7 @@ public class Serializers {
 		HashMap<List<String>, Integer> branchDupCheck = new HashMap<>();	
 		for(List<LabelAndPayload> branch: recvLabels) {
 			
-			List<String> labels = branch.stream().map(b -> b.label).collect(Collectors.toList());
+			List<String> labels = branch.stream().map(b -> Util.label(b.label)).collect(Collectors.toList());
 			
 			int count = branchDupCheck.getOrDefault(labels, 0);
 			branchDupCheck.put(labels, count+1);
