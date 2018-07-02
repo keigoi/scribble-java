@@ -1,5 +1,6 @@
 package org.scribble.ext.ocaml.codegen;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
@@ -22,6 +23,11 @@ public class OCamlAPIBuilder {
 	public final HashMap<Role, EState> inits;
 	
 	private static final String EXT_SOURCE_FUNCTOR = "_functor";
+	
+	public static final String[] builtinTypes = new String[] {"int", "string", "float"};
+	{
+		Arrays.sort(builtinTypes);
+	}
 	
 	public static final String preamble = 
 		  "(* Generated from scribble-ocaml https://github.com/keigoi/scribble-ocaml\n"
@@ -150,7 +156,10 @@ public class OCamlAPIBuilder {
 	}
 	
 	protected String generateImplDataTypeDefs() {
-		List<DataTypeDecl> decls = dataTypeDecls();
+		List<DataTypeDecl> decls = 
+				dataTypeDecls().stream()
+				.filter(typ -> Arrays.binarySearch(builtinTypes, typ.extName) == -1)
+				.collect(Collectors.toList());
 		
 		return decls.stream()
 				.map(typ -> typDefFormat
