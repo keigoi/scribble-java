@@ -99,7 +99,7 @@ public class OCamlAPIBuilder {
 				.replace("%PAYLOAD_TYPE_CONTENT", 
 						generateImplDataTypeDefs())
 				.replace("%MODULE_CONTENT", 
-						generateImplLocalTypes() + "\n" + generateImplRoles());
+						generateImplLocalTypes() + "\n" + generateImplSerializers());
 		
 		return preamble + "\n\n" + typeparam + "\n" + body;
 	}
@@ -117,12 +117,12 @@ public class OCamlAPIBuilder {
 		return buf.toString();
 	}
 	
-	protected String generateImplRoles() throws ScribbleException {
+	protected String generateImplSerializers() throws ScribbleException {
 		List<Role> roles = this.protocol.header.roledecls.getRoles();
-		return roles.stream().map(role -> generateImplRoles(role, roles)).collect(Collectors.joining("\n"));
+		return roles.stream().map(role -> generateImplSerializers(role, roles)).collect(Collectors.joining("\n"));
 	}
 	
-	protected String generateImplRoles(Role me, List<Role> roles) {
+	protected String generateImplSerializers(Role me, List<Role> roles) {
 		StringBuffer buf = new StringBuffer();
 		
 		StringBuffer contentBuf = new StringBuffer();
