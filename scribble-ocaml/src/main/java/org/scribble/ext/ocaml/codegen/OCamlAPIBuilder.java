@@ -2,6 +2,7 @@ package org.scribble.ext.ocaml.codegen;
 
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -24,10 +25,7 @@ public class OCamlAPIBuilder {
 	
 	private static final String EXT_SOURCE_FUNCTOR = "_functor";
 	
-	public static final String[] builtinTypes = new String[] {"int", "string", "float"};
-	{
-		Arrays.sort(builtinTypes);
-	}
+	public static final Set<String> builtinTypes = new HashSet<>(Arrays.asList("int", "string", "float", "bool"));
 	
 	public static final String preamble = 
 		  "(* Generated from scribble-ocaml https://github.com/keigoi/scribble-ocaml\n"
@@ -40,7 +38,7 @@ public class OCamlAPIBuilder {
 			+ "end";
 	
 	public static final String wrappingFunctorFormat =
-			  "module Make (Session:Scribble.Base.SESSION) %TYPEARG = struct\n"
+			  "module Make (Session:Scribble.S.SESSION) %TYPEARG = struct\n"
 			+ "%PAYLOAD_TYPE_CONTENT\n"
 			+ "open Session\n\n"
 			+ "%MODULE_CONTENT\n"
@@ -158,7 +156,7 @@ public class OCamlAPIBuilder {
 	protected String generateImplDataTypeDefs() {
 		List<DataTypeDecl> decls = 
 				dataTypeDecls().stream()
-				.filter(typ -> Arrays.binarySearch(builtinTypes, typ.extName) == -1)
+				.filter(typ -> !builtinTypes.contains(typ.extName))
 				.collect(Collectors.toList());
 		
 		return decls.stream()

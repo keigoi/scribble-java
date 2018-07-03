@@ -10,16 +10,6 @@ import org.scribble.model.endpoint.EState;
 import org.scribble.type.name.Role;
 
 public class Serializers {
-
-	public static final String sendLabelFormat =
-	    "      let %LABEL : 'p. ([>`%LABEL of %PAYLOAD * 'p sess], X.conn, %PAYLOAD * 'p sess) label =\n"
-	  + "        {_pack_label=(fun payload -> `%LABEL(payload)); _send=X.write_%FUNNAME}";
-	
-	public static final String shmemWriterImplFormat = 
-	  "          let write_%FUNNAME = Raw.send";
-	
-	public static final String writerSigFormat = 
-	"        val write_%FUNNAME : conn -> [>`%LABEL of %PAYLOAD * 'p sess] -> unit io";
 	
 	public static final String serializerFormat = 
 	  "  module %ROLE = struct\n"
@@ -28,28 +18,40 @@ public class Serializers {
 	+ "        val conn : conn Endpoint.conn_kind\n"
 	+ "%LABEL_MODULE_ARGS"
 	+ "      end) = struct\n"
+	+ "      type conn = X.conn\n"
 	+ "      let role : ([>`%ROLE of X.conn * 'lab], X.conn, 'lab) role =\n"
 	+ "        {_pack_role=(fun labels -> `%ROLE(labels)) ; _repr=\"role_%ROLE\"; _kind=X.conn}\n\n"
 	+ "%LABEL_MODULE_CONTENT"
 	+ "    end\n\n"
-	+ "    module Shmem = struct\n"
+	+ "    module Raw(RawDChan:Scribble.S.RAW_DCHAN with type 'a io = 'a Session.io) = struct\n"
 	+ "      include Make(struct\n"
-	+ "          type conn = Raw.t\n"
-	+ "          let conn = Shmem\n"
+	+ "          type conn = RawDChan.t\n"
+	+ "          type _ Endpoint.conn_kind += Raw : RawDChan.t Endpoint.conn_kind\n"
+	+ "          let conn = Raw\n"
 	+ "%SHMEM_LABEL_MODULE_CONTENT"
 	+ "        end)\n"
 	+ "    end\n"
 	+ "  end";
+
+	public static final String sendLabelFormat =
+	    "      let %FUNNAME : 'p. ([>`%LABEL of %PAYLOAD * 'p sess], X.conn, %PAYLOAD * 'p sess) label =\n"
+	  + "        {_pack_label=(fun payload -> `%LABEL(payload)); _send=X.write_%FUNNAME}";
 	
-	public static final String readerSigFormat = 
-	  "        val read_%FUNNAME : conn -> %LABELS io";
+	public static final String shmemWriterImplFormat = 
+	  "          let write_%FUNNAME = RawDChan.send";
+	
+	public static final String writerSigFormat = 
+	"        val write_%FUNNAME : conn -> [>`%LABEL of %PAYLOAD * 'p sess] -> unit io";
 	
 	public static final String recvLabelFormat =
 	    "      let receive_%FUNNAME  : type %TYVARS. (%LABELS, X.conn) labels =\n"
 	  + "        {_receive=X.read_%FUNNAME}";
 	
+	public static final String readerSigFormat = 
+	  "        val read_%FUNNAME : conn -> %LABELS io";
+	
 	public static final String shmemReaderImplFormat = 
-	  "          let read_%FUNNAME = Raw.receive";
+	  "          let read_%FUNNAME = RawDChan.receive";
 
 	public static String generateSerializers(HashMap<Role, EState> inits, Role me, Role peer) {
 		List<LabelAndPayload> sendLabels = new ArrayList<>(); 
@@ -66,7 +68,7 @@ public class Serializers {
 		for(LabelAndPayload label: sendLabels) {
 			int count = labelDupCheck.getOrDefault(label.label, 0);
 			labelDupCheck.put(label.label, count+1);
-			String funname = label.label + (count == 0 ? "" : "_" + count); 
+			String funname = Util.uncapitalise(Util.label(label.label)) + (count == 0 ? "" : "_" + count); 
 			moduleArgBuffer.append(writerSigFormat.replace("%FUNNAME", funname).replace("%LABEL", Util.label(label.label)).replace("%PAYLOAD", label.getPayloadTypeRepr()));
 			moduleArgBuffer.append('\n');
 			moduleContentBuffer.append(sendLabelFormat.replace("%FUNNAME", funname).replace("%LABEL", Util.label(label.label)).replace("%PAYLOAD", label.getPayloadTypeRepr()));

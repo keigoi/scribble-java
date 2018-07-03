@@ -12,15 +12,15 @@ import org.scribble.type.name.Role;
 
 public class Labels {
 
-	protected static List<LabelAndPayload> enumerateAllLabels(EState state) {
+	public static List<LabelAndPayload> enumerateAllLabels(EState state) {
 		return labels(state, a -> true, new ArrayList<>());
 	}
 
-	protected static List<List<LabelAndPayload>> enumerateRecvLabels(Role peer, EState state) {
+	public static List<List<LabelAndPayload>> enumerateRecvLabels(Role peer, EState state) {
 		return recvLabels(peer, state, new ArrayList<>());
 	}
 
-	protected static List<LabelAndPayload> enumrateSendLabels(Role peer, EState state) {
+	public static List<LabelAndPayload> enumrateSendLabels(Role peer, EState state) {
 		return labels(state, a -> a.peer.equals(peer) && (a.isSend() || a.isRequest()), new ArrayList<>());
 	}
 
