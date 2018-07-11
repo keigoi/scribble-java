@@ -23,11 +23,10 @@ public class Serializers {
 	+ "        {_pack_role=(fun labels -> `%ROLE(labels)) ; _repr=\"role_%ROLE\"; _kind=X.conn}\n\n"
 	+ "%LABEL_MODULE_CONTENT"
 	+ "    end\n\n"
-	+ "    module Raw(RawDChan:Scribble.S.RAW_DCHAN with type 'a io = 'a Session.io) = struct\n"
+	+ "    module Raw = struct\n"
 	+ "      include Make(struct\n"
-	+ "          type conn = RawDChan.t\n"
-	+ "          type _ Endpoint.conn_kind += Raw : RawDChan.t Endpoint.conn_kind\n"
-	+ "          let conn = Raw\n"
+	+ "          type conn = Shmem.Raw.t\n"
+	+ "          let conn = Shmem.MPSTChannel.Raw\n"
 	+ "%SHMEM_LABEL_MODULE_CONTENT"
 	+ "        end)\n"
 	+ "    end\n"
@@ -38,7 +37,7 @@ public class Serializers {
 	  + "        {_pack_label=(fun payload -> `%LABEL(payload)); _send=X.write_%FUNNAME}";
 	
 	public static final String shmemWriterImplFormat = 
-	  "          let write_%FUNNAME = RawDChan.send";
+	  "          let write_%FUNNAME = Shmem.Raw.send";
 	
 	public static final String writerSigFormat = 
 	"        val write_%FUNNAME : conn -> [>`%LABEL of %PAYLOAD * 'p sess] -> unit io";
@@ -51,7 +50,7 @@ public class Serializers {
 	  "        val read_%FUNNAME : conn -> %LABELS io";
 	
 	public static final String shmemReaderImplFormat = 
-	  "          let read_%FUNNAME = RawDChan.receive";
+	  "          let read_%FUNNAME = Shmem.Raw.receive";
 
 	public static String generateSerializers(HashMap<Role, EState> inits, Role me, Role peer) {
 		List<LabelAndPayload> sendLabels = new ArrayList<>(); 

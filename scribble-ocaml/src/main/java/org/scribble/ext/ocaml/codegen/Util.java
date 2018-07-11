@@ -2,6 +2,7 @@ package org.scribble.ext.ocaml.codegen;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.BiFunction;
 
 import org.scribble.ast.Module;
@@ -86,7 +87,7 @@ public class Util {
 		throw new RuntimeException("[OCaml] cannot find GProtocolName from LProtocolName " + local);
 	}
 
-	public static String getRoleConnTypeParams(List<Role> roles, Role myrole) {
+	public static String getRoleConnTypeParams(List<Role> roles, Role myrole, Optional<String> concreteType) {
 		StringBuffer buf = new StringBuffer();
 		boolean multiple = false;
 		for(Role role : roles) {
@@ -96,7 +97,11 @@ public class Util {
 			} else {
 				multiple = true;				
 			}
-			buf.append("'c_" + role);
+			if (concreteType.isPresent()) {
+				buf.append(concreteType.get());
+			} else {
+				buf.append("'c_" + role);				
+			}
 		}
 		return multiple ? "(" + buf.toString() + ")" : buf.toString();
 	}

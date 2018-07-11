@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -74,7 +75,7 @@ public class OCamlTypeBuilder {
 	
 	protected String getRoleConnTypeParams() {
 		List<Role> roles = module.getProtocolDecl(this.gpn.getSimpleName()).getHeader().roledecls.getRoles();
-		return Util.getRoleConnTypeParams(roles, this.role);
+		return Util.getRoleConnTypeParams(roles, this.role, Optional.empty());
 	}
 	
 	// traverse the graph to gather recurring states which will be declared at the top level
@@ -248,6 +249,7 @@ public class OCamlTypeBuilder {
 		buf.append(prefix);
 				
 		boolean[] role_middle = {false};
+		boolean polyRole = getRoles(curr).size() > 1;
 		
 		iterate(buf, getRoles(curr), (Role role) -> {
 			
@@ -261,6 +263,7 @@ public class OCamlTypeBuilder {
 			buf.append("`" + role + " of 'c_" + role + " *");
 			
 			boolean[] label_middle = {false};
+			boolean polyAction = getActions(curr, role).size() > 1;
 
 			iterate(buf, getActions(curr, role), (EAction action) -> {
 				
@@ -277,9 +280,14 @@ public class OCamlTypeBuilder {
 						+ " of " + payloadTypesToString(payloads) + " *\n");
 
 				EState succ = curr.getSuccessor(action);
-				this.indent_level++;
-				buildTypes(succ, buf, toplevel);
-				this.indent_level--;
+				
+				if (polyRole || polyAction) {
+					this.indent_level++;
+					buildTypes(succ, buf, toplevel);
+					this.indent_level--;
+				} else {
+					buildTypes(succ, buf, toplevel);					
+				}
 
 				buf.append(" sess");
 			});
@@ -312,9 +320,9 @@ public class OCamlTypeBuilder {
 		buf.append(prefix);
 				
 		EState succ = curr.getSuccessor(action);
-		this.indent_level++;
+		//this.indent_level++;
 		buildTypes(succ, buf, toplevel);
-		this.indent_level--;
+		//this.indent_level--;
 		buf.append(" sess]]");
 	}
 	
@@ -327,9 +335,9 @@ public class OCamlTypeBuilder {
 				+ " *\n");
 		
 		EState succ = curr.getSuccessor(action);
-		this.indent_level++;
+		//this.indent_level++;
 		buildTypes(succ, buf, toplevel);
-		this.indent_level--;
+		//this.indent_level--;
 		buf.append(" sess]]]");
 	}
 	
